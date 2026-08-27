@@ -28,6 +28,8 @@ type Stats struct {
 	pagesInBudget       atomic.Int64
 	sourceMapsRecovered atomic.Int64
 	openAPIEndpoints    atomic.Int64
+	retryAttempts       atomic.Int64
+	retryBackoffNS      atomic.Int64
 }
 
 func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.SummaryEvent {
@@ -40,6 +42,12 @@ func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.Summ
 	if secs > 0 {
 		urlsPerSec = float64(discovered) / secs
 		usefulPerSec = float64(inScope) / secs
+	}
+
+	backoffMS := s.retryBackoffNS.Load() / int64(time.Millisecond)
+	activeMS := dur.Milliseconds() - backoffMS
+	if activeMS < 0 {
+		activeMS = 0
 	}
 
 	return output.SummaryEvent{
@@ -63,6 +71,9 @@ func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.Summ
 		RobotsDisallowed:        s.robotsDisallowed.Load(),
 		SourceMapsRecovered:     s.sourceMapsRecovered.Load(),
 		OpenAPIEndpoints:        s.openAPIEndpoints.Load(),
+		RetryAttempts:           s.retryAttempts.Load(),
+		RetryBackoffMS:          backoffMS,
+		ActiveMS:                activeMS,
 		URLsPerSec:              urlsPerSec,
 		UsefulDiscoveriesPerSec: usefulPerSec,
 	}

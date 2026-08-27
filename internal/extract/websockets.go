@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"bytes"
 	"context"
 	"regexp"
 	"strings"
@@ -29,6 +30,13 @@ func (WebSocketExtractor) Applies(resp *fetch.Response) bool {
 }
 
 func (WebSocketExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error) {
+	body := in.Resp.Body
+	if !bytes.Contains(body, []byte("WebSocket")) &&
+		!bytes.Contains(body, []byte("ws://")) &&
+		!bytes.Contains(body, []byte("wss://")) {
+		return nil, nil
+	}
+
 	src := string(in.Resp.Body)
 	seen := map[string]bool{}
 	var out []Discovery

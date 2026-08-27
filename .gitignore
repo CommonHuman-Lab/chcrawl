@@ -1,2 +1,2 @@
-benchlab.test
-benchmarks/README.md
+*.test
+benchmarks/

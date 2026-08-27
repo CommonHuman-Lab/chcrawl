@@ -55,13 +55,19 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	}
 
 	e.stats.redirectsFollowed.Add(int64(len(resp.RedirectChain)))
+	if resp.RetryAttempts > 0 {
+		e.stats.retryAttempts.Add(int64(resp.RetryAttempts))
+		e.stats.retryBackoffNS.Add(int64(resp.RetryDelay))
+	}
 
 	if resp.StatusCode >= 400 {
 		e.stats.responsesFailed.Add(1)
 		_ = e.writer.WriteError(output.ErrorEvent{
-			URL:   item.URL,
-			Stage: "fetch",
-			Error: "http status " + strconv.Itoa(resp.StatusCode),
+			URL:           item.URL,
+			Stage:         "fetch",
+			Error:         "http status " + strconv.Itoa(resp.StatusCode),
+			RetryAttempts: resp.RetryAttempts,
+			RetryDelayMS:  resp.RetryDelay.Milliseconds(),
 		})
 		return
 	}
@@ -100,6 +106,8 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 		RedirectChain: resp.RedirectChain,
 		Discoveries:   discoveries,
 		FetchMS:       resp.FetchDuration.Milliseconds(),
+		RetryAttempts: resp.RetryAttempts,
+		RetryDelayMS:  resp.RetryDelay.Milliseconds(),
 	}
 	_ = e.writer.WritePage(evt)
 }

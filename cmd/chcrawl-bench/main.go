@@ -29,6 +29,8 @@ func run(args []string) error {
 	workload := fs.String("workload", "", "run only this workload (default: all)")
 	reportPath := fs.String("report", "", "write a markdown report to this path (default: stdout)")
 	compare := fs.Bool("compare", false, "score chcrawl against katana/hakrawler/gospider (any not installed are reported, not required) instead of the oracle correctness run")
+	retryDisabledComparison := fs.Bool("retry-disabled-comparison", false,
+		"run the oracle suite with retries OFF, for apples-to-apples raw crawl-speed comparison against tools that don't retry 5xx by default — NOT the production default, reported separately, never merged with the normal run")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -37,14 +39,18 @@ func run(args []string) error {
 		return runCompare(*workload, *reportPath)
 	}
 
+	return runOracle(*workload, *reportPath, *retryDisabledComparison)
+}
+
+func runOracle(workload, reportPath string, disableRetry bool) error {
 	all := benchlab.Workloads()
 	selected := map[string]*benchlab.Site{}
-	if *workload != "" {
-		site, ok := all[*workload]
+	if workload != "" {
+		site, ok := all[workload]
 		if !ok {
-			return fmt.Errorf("unknown workload %q (available: %s)", *workload, strings.Join(sortedKeys(all), ", "))
+			return fmt.Errorf("unknown workload %q (available: %s)", workload, strings.Join(sortedKeys(all), ", "))
 		}
-		selected[*workload] = site
+		selected[workload] = site
 	} else {
 		selected = all
 	}
@@ -55,7 +61,7 @@ func run(args []string) error {
 		site := selected[name]
 		sameOrigin := !strings.Contains(name, "multi-host")
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		result, err := benchlab.Run(ctx, site, sameOrigin, benchlab.RunOptions{})
+		result, err := benchlab.Run(ctx, site, sameOrigin, benchlab.RunOptions{DisableRetry: disableRetry})
 		cancel()
 		if err != nil {
 			return fmt.Errorf("running %s: %w", name, err)
@@ -68,13 +74,20 @@ func run(args []string) error {
 	}
 
 	out := os.Stdout
-	if *reportPath != "" {
-		f, err := os.Create(*reportPath)
+	if reportPath != "" {
+		f, err := os.Create(reportPath)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
 		out = f
+	}
+	if disableRetry {
+		fmt.Fprintf(out, "# NOT the production default — retries disabled\n\n")
+		fmt.Fprintf(out, "This report exists only for apples-to-apples raw crawl-speed comparison\n")
+		fmt.Fprintf(out, "against tools that don't retry 5xx/429 by default. chcrawl's actual default\n")
+		fmt.Fprintf(out, "behavior (3 retries, exponential backoff, 429+5xx retryable) is unchanged —\n")
+		fmt.Fprintf(out, "see the normal `chcrawl-bench` report for that leaderboard.\n\n")
 	}
 	benchlab.WriteReport(out, results)
 

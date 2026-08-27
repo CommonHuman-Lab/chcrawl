@@ -19,8 +19,11 @@ func WriteReport(w io.Writer, results map[string]*Result) {
 
 	fmt.Fprintf(w, "# chcrawl benchmark report\n\n")
 	fmt.Fprintf(w, "Generated %s. All workloads are 100%% local (127.0.0.1-only), no external network.\n\n", time.Now().Format(time.RFC3339))
-	fmt.Fprintf(w, "| workload | duration | requests/sec | unique in-scope | requests | ok | failed | peak RSS | correctness |\n")
-	fmt.Fprintf(w, "|---|---|---|---|---|---|---|---|---|\n")
+	fmt.Fprintf(w, "retries/backoff/active break out how much of duration is real crawl work vs. deliberate\n")
+	fmt.Fprintf(w, "retry-policy backoff sleep (see retry.Policy) — active is only exact when at most one\n")
+	fmt.Fprintf(w, "fetch is retrying at a time; concurrent overlapping retries would double-count it.\n\n")
+	fmt.Fprintf(w, "| workload | duration | requests/sec | unique in-scope | requests | ok | failed | retries | backoff | active | peak RSS | correctness |\n")
+	fmt.Fprintf(w, "|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 
 	var failed []string
 	for _, name := range names {
@@ -34,9 +37,10 @@ func WriteReport(w io.Writer, results map[string]*Result) {
 		if r.Duration.Seconds() > 0 {
 			rps = float64(r.Summary.RequestsMade) / r.Duration.Seconds()
 		}
-		fmt.Fprintf(w, "| %s | %s | %.1f | %d | %d | %d | %d | %.1f MB | %s |\n",
+		fmt.Fprintf(w, "| %s | %s | %.1f | %d | %d | %d | %d | %d | %dms | %dms | %.1f MB | %s |\n",
 			name, r.Duration.Round(time.Millisecond), rps,
 			r.Summary.URLsInScope, r.Summary.RequestsMade, r.Summary.ResponsesOK, r.Summary.ResponsesFailed,
+			r.Summary.RetryAttempts, r.Summary.RetryBackoffMS, r.Summary.ActiveMS,
 			float64(r.PeakRSSBytes)/(1024*1024), status)
 	}
 

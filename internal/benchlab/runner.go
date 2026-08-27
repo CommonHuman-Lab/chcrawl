@@ -27,6 +27,7 @@ type RunOptions struct {
 	Concurrency        int
 	PerHostConcurrency int
 	MaxBodyBytes       int64
+	DisableRetry       bool
 }
 
 func (o RunOptions) withDefaults() RunOptions {
@@ -74,15 +75,19 @@ func Run(ctx context.Context, site *Site, sameOrigin bool, opts RunOptions) (*Re
 	servers := site.Start()
 	defer servers.Close()
 
-	cfg, err := config.New(servers.SeedURL,
+	cfgOpts := []config.Option{
 		config.WithConcurrency(opts.Concurrency),
 		config.WithPerHostConcurrency(opts.PerHostConcurrency),
 		config.WithMaxPages(opts.MaxPages),
 		config.WithMaxDepth(opts.MaxDepth),
 		config.WithSameOrigin(opts.SameOrigin),
 		config.WithMaxBodyBytes(opts.MaxBodyBytes),
-		config.WithTimeout(10*time.Second),
-	)
+		config.WithTimeout(10 * time.Second),
+	}
+	if opts.DisableRetry {
+		cfgOpts = append(cfgOpts, config.WithRetryPolicy(nil))
+	}
+	cfg, err := config.New(servers.SeedURL, cfgOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("benchlab: building config: %w", err)
 	}

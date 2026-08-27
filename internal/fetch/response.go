@@ -31,4 +31,6 @@ type Response struct {
 	ContentType   string
 	Truncated     bool
 	FetchDuration time.Duration
+	RetryAttempts int
+	RetryDelay    time.Duration
 }

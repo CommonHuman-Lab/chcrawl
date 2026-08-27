@@ -23,14 +23,18 @@ type PageEvent struct {
 	RedirectChain []fetch.RedirectHop `json:"redirect_chain,omitempty"`
 	Discoveries   []extract.Discovery `json:"discoveries,omitempty"`
 	FetchMS       int64               `json:"fetch_ms"`
+	RetryAttempts int                 `json:"retry_attempts,omitempty"`
+	RetryDelayMS  int64               `json:"retry_delay_ms,omitempty"`
 }
 
 // ErrorEvent records a failure at some pipeline stage for one URL.
 type ErrorEvent struct {
-	Type  string `json:"type"`
-	URL   string `json:"url"`
-	Stage string `json:"stage"` // "fetch", "extract", "robots"
-	Error string `json:"error"`
+	Type          string `json:"type"`
+	URL           string `json:"url"`
+	Stage         string `json:"stage"` // "fetch", "extract", "robots"
+	Error         string `json:"error"`
+	RetryAttempts int    `json:"retry_attempts,omitempty"`
+	RetryDelayMS  int64  `json:"retry_delay_ms,omitempty"`
 }
 
 // OpenAPIEvent records the result of an optional OpenAPI/Swagger discovery
@@ -65,6 +69,9 @@ type SummaryEvent struct {
 	RobotsDisallowed        int64         `json:"robots_disallowed"`
 	SourceMapsRecovered     int64         `json:"source_maps_recovered"`
 	OpenAPIEndpoints        int64         `json:"openapi_endpoints_discovered"`
+	RetryAttempts           int64         `json:"retry_attempts"`
+	RetryBackoffMS          int64         `json:"retry_backoff_ms"`
+	ActiveMS                int64         `json:"active_ms"`
 	URLsPerSec              float64       `json:"urls_per_sec"`
 	UsefulDiscoveriesPerSec float64       `json:"useful_unique_discoveries_per_sec"`
 	PeakMemoryBytes         uint64        `json:"peak_memory_bytes"`

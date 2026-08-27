@@ -97,6 +97,8 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 		return f.doOnce(ctx, req)
 	}
 	var lastErr error
+	var retryAttempts int
+	var retryDelay time.Duration
 	for attempt := 0; ; attempt++ {
 		resp, err := f.doOnce(ctx, req)
 		if err != nil {
@@ -108,6 +110,8 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 			if !d.Retry || !sleepCtx(ctx, d.Delay) {
 				return nil, lastErr
 			}
+			retryAttempts++
+			retryDelay += d.Delay
 			continue
 		}
 		retryAfter := ""
@@ -116,8 +120,12 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 		}
 		d := f.retryPolicy.Next(attempt, resp.StatusCode, retryAfter, nil)
 		if !d.Retry || !sleepCtx(ctx, d.Delay) {
+			resp.RetryAttempts = retryAttempts
+			resp.RetryDelay = retryDelay
 			return resp, nil
 		}
+		retryAttempts++
+		retryDelay += d.Delay
 	}
 }
 

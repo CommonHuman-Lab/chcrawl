@@ -18,7 +18,11 @@ go build -o chcrawl ./cmd/chcrawl
 Output is streamed JSONL to stdout: a `page` record per fetched page, an
 `error` record per failure, and a final `summary` record with aggregate
 stats (unique/in-scope URLs, endpoints, params, forms, JS files/routes,
-requests, redirects, duplicates, throughput, peak memory).
+requests, redirects, duplicates, throughput, peak memory). `page`/`error`
+records and the summary also carry retry telemetry (`retry_attempts`,
+`retry_delay_ms`/`retry_backoff_ms`, and the summary's `active_ms` —
+duration minus cumulative backoff sleep) so a slow crawl against a flaky
+target can be told apart from a slow crawl engine.
 
 ```bash
 ./chcrawl -h                                  # full flag reference
