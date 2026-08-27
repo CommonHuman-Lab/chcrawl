@@ -48,31 +48,52 @@ type OpenAPIEvent struct {
 // SummaryEvent is the final record emitted at the end of a crawl run,
 // satisfying every metric called for in the project brief.
 type SummaryEvent struct {
-	Type                    string        `json:"type"`
-	Seed                    string        `json:"seed"`
-	Partial                 bool          `json:"partial,omitempty"`
-	Duration                time.Duration `json:"duration_ns"`
-	DurationHuman           string        `json:"duration"`
-	URLsDiscovered          int64         `json:"urls_discovered_total"`
-	URLsUnique              int64         `json:"urls_unique"`
-	URLsInScope             int64         `json:"urls_in_scope_unique"`
-	Endpoints               int64         `json:"endpoints_discovered"`
-	Params                  int64         `json:"params_discovered"`
-	Forms                   int64         `json:"forms_discovered"`
-	JSFiles                 int64         `json:"js_files_discovered"`
-	JSRoutes                int64         `json:"js_routes_discovered"`
-	RequestsMade            int64         `json:"requests_made"`
-	ResponsesOK             int64         `json:"responses_ok"`
-	ResponsesFailed         int64         `json:"responses_failed"`
-	RedirectsFollowed       int64         `json:"redirects_followed"`
-	DuplicatesRejected      int64         `json:"duplicates_rejected"`
-	RobotsDisallowed        int64         `json:"robots_disallowed"`
-	SourceMapsRecovered     int64         `json:"source_maps_recovered"`
-	OpenAPIEndpoints        int64         `json:"openapi_endpoints_discovered"`
-	RetryAttempts           int64         `json:"retry_attempts"`
-	RetryBackoffMS          int64         `json:"retry_backoff_ms"`
-	ActiveMS                int64         `json:"active_ms"`
-	URLsPerSec              float64       `json:"urls_per_sec"`
-	UsefulDiscoveriesPerSec float64       `json:"useful_unique_discoveries_per_sec"`
-	PeakMemoryBytes         uint64        `json:"peak_memory_bytes"`
+	Type                string        `json:"type"`
+	Seed                string        `json:"seed"`
+	Partial             bool          `json:"partial,omitempty"`
+	Duration            time.Duration `json:"duration_ns"`
+	DurationHuman       string        `json:"duration"`
+	URLsDiscovered      int64         `json:"urls_discovered_total"`
+	URLsUnique          int64         `json:"urls_unique"`
+	URLsInScope         int64         `json:"urls_in_scope_unique"`
+	Endpoints           int64         `json:"endpoints_discovered"`
+	Params              int64         `json:"params_discovered"`
+	Forms               int64         `json:"forms_discovered"`
+	JSFiles             int64         `json:"js_files_discovered"`
+	JSRoutes            int64         `json:"js_routes_discovered"`
+	RequestsMade        int64         `json:"requests_made"`
+	ResponsesOK         int64         `json:"responses_ok"`
+	ResponsesFailed     int64         `json:"responses_failed"`
+	RedirectsFollowed   int64         `json:"redirects_followed"`
+	DuplicatesRejected  int64         `json:"duplicates_rejected"`
+	RobotsDisallowed    int64         `json:"robots_disallowed"`
+	SourceMapsRecovered int64         `json:"source_maps_recovered"`
+	OpenAPIEndpoints    int64         `json:"openapi_endpoints_discovered"`
+	// RetryAttempts and RetryBackoffMS total every retry the active
+	// retry.Policy decided to make across the whole crawl, and the
+	// cumulative backoff time deliberately slept for them.
+	//
+	// ActiveWallMS is Duration minus RetryBackoffMS (floored at 0): wall-clock
+	// time NOT spent in deliberate retry backoff. It is derived entirely from
+	// wall-clock measurements — it is NOT CPU time, and says nothing about
+	// actual processor usage. It is exact only when at most one fetch is
+	// retrying at a time; if multiple fetches retry concurrently, their
+	// backoff windows can overlap on the wall clock while this field sums
+	// them independently, so RetryBackoffMS can exceed Duration and
+	// ActiveWallMS floors at 0 rather than going negative.
+	RetryAttempts int64 `json:"retry_attempts"`
+	// RetryBackoff/ActiveWall are full nanosecond precision (matching
+	// Duration); RetryBackoffMS/ActiveWallMS are millisecond convenience
+	// copies for quick reading in a JSONL stream. Anything computing
+	// statistics over these values (e.g. internal/benchlab) should use the
+	// nanosecond fields — millisecond rounding measurably distorts
+	// sub-millisecond-scale workloads.
+	RetryBackoff   time.Duration `json:"retry_backoff_ns"`
+	ActiveWall     time.Duration `json:"active_wall_ns"`
+	RetryBackoffMS int64         `json:"retry_backoff_ms"`
+	ActiveWallMS   int64         `json:"active_wall_ms"`
+
+	URLsPerSec              float64 `json:"urls_per_sec"`
+	UsefulDiscoveriesPerSec float64 `json:"useful_unique_discoveries_per_sec"`
+	PeakMemoryBytes         uint64  `json:"peak_memory_bytes"`
 }

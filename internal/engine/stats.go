@@ -44,11 +44,13 @@ func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.Summ
 		usefulPerSec = float64(inScope) / secs
 	}
 
-	backoffMS := s.retryBackoffNS.Load() / int64(time.Millisecond)
-	activeMS := dur.Milliseconds() - backoffMS
-	if activeMS < 0 {
-		activeMS = 0
+	backoff := time.Duration(s.retryBackoffNS.Load())
+	activeWall := dur - backoff
+	if activeWall < 0 {
+		activeWall = 0
 	}
+	backoffMS := backoff.Milliseconds()
+	activeWallMS := activeWall.Milliseconds()
 
 	return output.SummaryEvent{
 		Seed:                    seed,
@@ -72,8 +74,10 @@ func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.Summ
 		SourceMapsRecovered:     s.sourceMapsRecovered.Load(),
 		OpenAPIEndpoints:        s.openAPIEndpoints.Load(),
 		RetryAttempts:           s.retryAttempts.Load(),
+		RetryBackoff:            backoff,
+		ActiveWall:              activeWall,
 		RetryBackoffMS:          backoffMS,
-		ActiveMS:                activeMS,
+		ActiveWallMS:            activeWallMS,
 		URLsPerSec:              urlsPerSec,
 		UsefulDiscoveriesPerSec: usefulPerSec,
 	}

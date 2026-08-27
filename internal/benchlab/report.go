@@ -20,8 +20,13 @@ func WriteReport(w io.Writer, results map[string]*Result) {
 	fmt.Fprintf(w, "# chcrawl benchmark report\n\n")
 	fmt.Fprintf(w, "Generated %s. All workloads are 100%% local (127.0.0.1-only), no external network.\n\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(w, "retries/backoff/active break out how much of duration is real crawl work vs. deliberate\n")
-	fmt.Fprintf(w, "retry-policy backoff sleep (see retry.Policy) — active is only exact when at most one\n")
-	fmt.Fprintf(w, "fetch is retrying at a time; concurrent overlapping retries would double-count it.\n\n")
+	fmt.Fprintf(w, "retry-policy backoff sleep (see retry.Policy). active (SummaryEvent.ActiveWallMS) is\n")
+	fmt.Fprintf(w, "wall-clock duration minus backoff — NOT CPU time — and is only exact when at most one\n")
+	fmt.Fprintf(w, "fetch is retrying at a time; concurrent overlapping retries can make backoff exceed\n")
+	fmt.Fprintf(w, "duration, in which case active floors at 0 rather than going negative.\n\n")
+	fmt.Fprintf(w, "This is a single run per workload. For statistically meaningful results (percentiles,\n")
+	fmt.Fprintf(w, "flaky-workload detection, isolated peak-RSS) use the default `chcrawl-bench` mode\n")
+	fmt.Fprintf(w, "(-runs 30 by default) instead of -runs 1.\n\n")
 	fmt.Fprintf(w, "| workload | duration | requests/sec | unique in-scope | requests | ok | failed | retries | backoff | active | peak RSS | correctness |\n")
 	fmt.Fprintf(w, "|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 
@@ -40,7 +45,7 @@ func WriteReport(w io.Writer, results map[string]*Result) {
 		fmt.Fprintf(w, "| %s | %s | %.1f | %d | %d | %d | %d | %d | %dms | %dms | %.1f MB | %s |\n",
 			name, r.Duration.Round(time.Millisecond), rps,
 			r.Summary.URLsInScope, r.Summary.RequestsMade, r.Summary.ResponsesOK, r.Summary.ResponsesFailed,
-			r.Summary.RetryAttempts, r.Summary.RetryBackoffMS, r.Summary.ActiveMS,
+			r.Summary.RetryAttempts, r.Summary.RetryBackoffMS, r.Summary.ActiveWallMS,
 			float64(r.PeakRSSBytes)/(1024*1024), status)
 	}
 

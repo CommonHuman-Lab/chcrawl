@@ -20,9 +20,9 @@ Output is streamed JSONL to stdout: a `page` record per fetched page, an
 stats (unique/in-scope URLs, endpoints, params, forms, JS files/routes,
 requests, redirects, duplicates, throughput, peak memory). `page`/`error`
 records and the summary also carry retry telemetry (`retry_attempts`,
-`retry_delay_ms`/`retry_backoff_ms`, and the summary's `active_ms` —
-duration minus cumulative backoff sleep) so a slow crawl against a flaky
-target can be told apart from a slow crawl engine.
+`retry_delay_ms`/`retry_backoff_ms`, and the summary's `active_wall_ms` —
+wall-clock duration minus cumulative retry backoff, NOT CPU time) so a slow
+crawl against a flaky target can be told apart from a slow crawl engine.
 
 ```bash
 ./chcrawl -h                                  # full flag reference
@@ -65,9 +65,3 @@ Key flags: `-concurrency`, `-per-host-concurrency`, `-max-pages`,
   crawled, recovers original pre-minification source (noise-filtered:
   `node_modules`, `webpack/runtime`, `.spec`/`.test` files, `/vendor/`
   excluded) and reports what was recovered as a `source_map` discovery.
-
-## Testing
-
-```bash
-go build ./... && go vet ./... && go test ./... -race
-```
