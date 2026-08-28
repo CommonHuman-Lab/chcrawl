@@ -1,6 +1,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"sync"
@@ -38,14 +39,13 @@ func (w *Writer) WriteOpenAPI(e OpenAPIEvent) error {
 }
 
 func (w *Writer) write(v interface{}) error {
-	b, err := json.Marshal(v)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
 		return err
 	}
-	b = append(b, '\n')
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	_, err = w.out.Write(b)
+	_, err := w.out.Write(buf.Bytes())
 	return err
 }
