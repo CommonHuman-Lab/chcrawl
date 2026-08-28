@@ -44,7 +44,8 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	if err := e.hosts.Acquire(ctx, target.Host); err != nil {
 		return
 	}
-	defer e.hosts.Release(target.Host)
+	releaseHost := sync.OnceFunc(func() { e.hosts.Release(target.Host) })
+	defer releaseHost()
 
 	e.stats.requestsMade.Add(1)
 	resp, err := e.fetcher.Fetch(ctx, fetch.Request{URL: item.URL, Method: "GET"})
@@ -75,6 +76,8 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	if strings.Contains(strings.ToLower(resp.ContentType), "javascript") {
 		e.stats.jsFiles.Add(1)
 	}
+
+	releaseHost()
 
 	if !e.admitPageBudget() {
 		cancel()
