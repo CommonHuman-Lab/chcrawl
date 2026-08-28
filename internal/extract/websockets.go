@@ -18,6 +18,8 @@ var (
 	wsNewRelativeRe  = regexp.MustCompile(`new\s+WebSocket\s*\(\s*["'` + "`" + `](/[^"'` + "`" + `\s)]+)["'` + "`" + `]`)
 )
 
+var metaWebSocket = map[string]string{"source": "websocket"}
+
 // WebSocketExtractor finds WebSocket endpoint URLs referenced in HTML or JS
 // source text.
 type WebSocketExtractor struct{}
@@ -45,7 +47,7 @@ func (WebSocketExtractor) Extract(ctx context.Context, in Input) ([]Discovery, e
 			return
 		}
 		seen[u] = true
-		out = append(out, Discovery{Kind: "ws_url", URL: u, Meta: map[string]string{"source": "websocket"}})
+		out = append(out, Discovery{Kind: "ws_url", URL: u, Meta: metaWebSocket})
 	}
 
 	for _, m := range wsNewAbsoluteRe.FindAllStringSubmatch(src, -1) {

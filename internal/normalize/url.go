@@ -20,7 +20,10 @@ func URL(raw string, mode config.CanonicalizationMode, sortQuery bool) string {
 	if err != nil {
 		return raw
 	}
+	return FromParsed(p, mode, sortQuery)
+}
 
+func FromParsed(p *url.URL, mode config.CanonicalizationMode, sortQuery bool) string {
 	scheme := strings.ToLower(p.Scheme)
 	host := strings.ToLower(p.Host)
 

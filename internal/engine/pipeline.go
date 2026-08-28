@@ -187,7 +187,7 @@ func (e *Engine) maybeEnqueueChild(ctx context.Context, pending *sync.WaitGroup,
 	if !e.scope.InScope(u, e.seedURL) {
 		return
 	}
-	norm := normalize.URL(childURL, e.cfg.Canonicalization, e.cfg.SortQueryParams)
+	norm := normalize.FromParsed(u, e.cfg.Canonicalization, e.cfg.SortQueryParams)
 	if !e.dedup.MarkIfNew(norm) {
 		e.stats.duplicatesRejected.Add(1)
 		return

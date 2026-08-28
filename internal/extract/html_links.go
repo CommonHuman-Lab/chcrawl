@@ -17,6 +17,25 @@ var codePathRe = regexp.MustCompile(`^(/(?:[A-Za-z0-9_\-]+/){2,}(?:[A-Za-z0-9_\-
 
 var skipHrefPrefixes = []string{"javascript:", "mailto:", "#"}
 
+// linkMeta are Discovery.Meta values for LinkExtractor's fixed set of
+// "source" tags. Shared read-only across every discovery of a given kind
+var (
+	metaAHref            = map[string]string{"source": "a_href"}
+	metaLinkHref         = map[string]string{"source": "link_href"}
+	metaScriptSrc        = map[string]string{"source": "script_src", "asset": "js"}
+	metaImgSrc           = map[string]string{"source": "img_src"}
+	metaIframeSrc        = map[string]string{"source": "iframe_src"}
+	metaButtonFormaction = map[string]string{"source": "button_formaction"}
+	metaMetaRefresh      = map[string]string{"source": "meta_refresh"}
+	metaCodeBlock        = map[string]string{"source": "code_block"}
+	metaDataAttr         = map[string]map[string]string{
+		"data-href":   {"source": "data-href"},
+		"data-url":    {"source": "data-url"},
+		"data-link":   {"source": "data-link"},
+		"data-action": {"source": "data-action"},
+	}
+)
+
 func skippableHref(v string) bool {
 	for _, p := range skipHrefPrefixes {
 		if strings.HasPrefix(v, p) {
@@ -56,36 +75,35 @@ func (LinkExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error)
 	var walk func(n *html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
-			attrs := attrMap(n.Attr)
 			switch n.Data {
 			case "a":
-				if href := strings.TrimSpace(attrs["href"]); href != "" && !skippableHref(href) {
-					add("link", href, map[string]string{"source": "a_href"})
+				if href := strings.TrimSpace(attrStr(n.Attr, "href")); href != "" && !skippableHref(href) {
+					add("link", href, metaAHref)
 				}
 			case "link":
-				if href := strings.TrimSpace(attrs["href"]); href != "" && !skippableHref(href) {
-					add("link", href, map[string]string{"source": "link_href"})
+				if href := strings.TrimSpace(attrStr(n.Attr, "href")); href != "" && !skippableHref(href) {
+					add("link", href, metaLinkHref)
 				}
 			case "script":
-				if src := strings.TrimSpace(attrs["src"]); src != "" {
-					add("link", src, map[string]string{"source": "script_src", "asset": "js"})
+				if src := strings.TrimSpace(attrStr(n.Attr, "src")); src != "" {
+					add("link", src, metaScriptSrc)
 				}
 			case "img":
-				if src := strings.TrimSpace(attrs["src"]); src != "" {
-					add("link", src, map[string]string{"source": "img_src"})
+				if src := strings.TrimSpace(attrStr(n.Attr, "src")); src != "" {
+					add("link", src, metaImgSrc)
 				}
 			case "iframe":
-				if src := strings.TrimSpace(attrs["src"]); src != "" && !skippableHref(src) {
-					add("link", src, map[string]string{"source": "iframe_src"})
+				if src := strings.TrimSpace(attrStr(n.Attr, "src")); src != "" && !skippableHref(src) {
+					add("link", src, metaIframeSrc)
 				}
 			case "button":
-				if fa := strings.TrimSpace(attrs["formaction"]); fa != "" && !skippableHref(fa) {
-					add("link", fa, map[string]string{"source": "button_formaction"})
+				if fa := strings.TrimSpace(attrStr(n.Attr, "formaction")); fa != "" && !skippableHref(fa) {
+					add("link", fa, metaButtonFormaction)
 				}
 			case "meta":
-				if strings.EqualFold(attrs["http-equiv"], "refresh") {
-					if u, ok := parseMetaRefresh(attrs["content"]); ok {
-						add("link", u, map[string]string{"source": "meta_refresh"})
+				if strings.EqualFold(attrStr(n.Attr, "http-equiv"), "refresh") {
+					if u, ok := parseMetaRefresh(attrStr(n.Attr, "content")); ok {
+						add("link", u, metaMetaRefresh)
 					}
 				}
 			case "code":
@@ -94,8 +112,8 @@ func (LinkExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error)
 				}
 			}
 			for _, dataAttr := range []string{"data-href", "data-url", "data-link", "data-action"} {
-				if v := strings.TrimSpace(attrs[dataAttr]); v != "" && !skippableHref(v) && !strings.HasPrefix(v, "{") {
-					add("link", v, map[string]string{"source": dataAttr})
+				if v := strings.TrimSpace(attrStr(n.Attr, dataAttr)); v != "" && !skippableHref(v) && !strings.HasPrefix(v, "{") {
+					add("link", v, metaDataAttr[dataAttr])
 				}
 			}
 		}
@@ -127,7 +145,7 @@ func extractCodePaths(codeNode *html.Node, base *url.URL) []Discovery {
 				out = append(out, Discovery{
 					Kind: "code_path",
 					URL:  base.Scheme + "://" + base.Host + text,
-					Meta: map[string]string{"source": "code_block"},
+					Meta: metaCodeBlock,
 				})
 			}
 		}
@@ -158,12 +176,19 @@ func parseMetaRefresh(content string) (string, bool) {
 	return u, true
 }
 
-func attrMap(attrs []html.Attribute) map[string]string {
-	m := make(map[string]string, len(attrs))
+func attrVal(attrs []html.Attribute, name string) (string, bool) {
+	val, ok := "", false
 	for _, a := range attrs {
-		m[strings.ToLower(a.Key)] = a.Val
+		if strings.EqualFold(a.Key, name) {
+			val, ok = a.Val, true
+		}
 	}
-	return m
+	return val, ok
+}
+
+func attrStr(attrs []html.Attribute, name string) string {
+	v, _ := attrVal(attrs, name)
+	return v
 }
 
 func resolve(base *url.URL, ref string) (string, error) {

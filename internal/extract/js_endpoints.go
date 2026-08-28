@@ -28,6 +28,11 @@ var (
 	trailingAlphaRe = regexp.MustCompile(`^[A-Za-z]+$`)
 )
 
+var (
+	metaJSEndpoint = map[string]string{"source": "js_endpoint"}
+	metaJSChunk    = map[string]string{"source": "js_chunk", "asset": "js"}
+)
+
 // JSEndpointExtractor mines API endpoint candidates and webpack chunk
 // filenames out of raw JavaScript source.
 type JSEndpointExtractor struct{}
@@ -50,7 +55,7 @@ func (JSEndpointExtractor) Extract(ctx context.Context, in Input) ([]Discovery, 
 			return
 		}
 		seen[key] = true
-		out = append(out, Discovery{Kind: "link", URL: absURL, Method: method, Meta: map[string]string{"source": "js_endpoint"}})
+		out = append(out, Discovery{Kind: "link", URL: absURL, Method: method, Meta: metaJSEndpoint})
 	}
 
 	for _, m := range methodTemplateRe.FindAllStringSubmatch(src, -1) {
@@ -89,7 +94,7 @@ func (JSEndpointExtractor) Extract(ctx context.Context, in Input) ([]Discovery, 
 
 	for _, m := range chunkFileRe.FindAllStringSubmatch(src, -1) {
 		if abs, err := resolve(in.BaseURL, m[1]); err == nil {
-			out = append(out, Discovery{Kind: "link", URL: abs, Meta: map[string]string{"source": "js_chunk", "asset": "js"}})
+			out = append(out, Discovery{Kind: "link", URL: abs, Meta: metaJSChunk})
 		}
 	}
 

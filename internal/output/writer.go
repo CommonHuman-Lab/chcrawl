@@ -10,11 +10,11 @@ import (
 // concurrent use by multiple crawl workers.
 type Writer struct {
 	mu  sync.Mutex
-	enc *json.Encoder
+	out io.Writer
 }
 
 func NewWriter(w io.Writer) *Writer {
-	return &Writer{enc: json.NewEncoder(w)}
+	return &Writer{out: w}
 }
 
 func (w *Writer) WritePage(e PageEvent) error {
@@ -38,7 +38,14 @@ func (w *Writer) WriteOpenAPI(e OpenAPIEvent) error {
 }
 
 func (w *Writer) write(v interface{}) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b = append(b, '\n')
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.enc.Encode(v)
+	_, err = w.out.Write(b)
+	return err
 }

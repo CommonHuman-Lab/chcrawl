@@ -59,15 +59,13 @@ func (FormExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error)
 }
 
 func extractForm(form *html.Node, base *url.URL) (Discovery, bool) {
-	attrs := attrMap(form.Attr)
-
 	action := base.String()
-	if raw := strings.TrimSpace(attrs["action"]); raw != "" {
+	if raw := strings.TrimSpace(attrStr(form.Attr, "action")); raw != "" {
 		if abs, err := resolve(base, raw); err == nil {
 			action = abs
 		}
 	}
-	method := strings.ToUpper(strings.TrimSpace(attrs["method"]))
+	method := strings.ToUpper(strings.TrimSpace(attrStr(form.Attr, "method")))
 	if method == "" {
 		method = "GET"
 	}
@@ -78,23 +76,22 @@ func extractForm(form *html.Node, base *url.URL) (Discovery, bool) {
 	var walkFields func(n *html.Node)
 	walkFields = func(n *html.Node) {
 		if n.Type == html.ElementNode {
-			a := attrMap(n.Attr)
 			switch n.Data {
 			case "input":
-				inputType := strings.ToLower(a["type"])
+				inputType := strings.ToLower(attrStr(n.Attr, "type"))
 				if inputType == "" {
 					inputType = "text"
 				}
-				name := strings.TrimSpace(a["name"])
+				name := strings.TrimSpace(attrStr(n.Attr, "name"))
 				if name == "" || skipInputTypes[inputType] {
 					break
 				}
-				value := a["value"]
+				value := attrStr(n.Attr, "value")
 				switch inputType {
 				case "submit", "hidden":
 					baseData[name] = value
 				default:
-					_, required := a["required"]
+					_, required := attrVal(n.Attr, "required")
 					if value == "" && required {
 						value = requiredDefaults[inputType]
 						if value == "" {
@@ -104,15 +101,15 @@ func extractForm(form *html.Node, base *url.URL) (Discovery, bool) {
 					params[name] = value
 				}
 			case "select":
-				name := strings.TrimSpace(a["name"])
+				name := strings.TrimSpace(attrStr(n.Attr, "name"))
 				if name != "" {
 					params[name] = selectValue(n)
 				}
 			case "textarea":
-				name := strings.TrimSpace(a["name"])
+				name := strings.TrimSpace(attrStr(n.Attr, "name"))
 				if name != "" {
 					value := ""
-					if _, required := a["required"]; required {
+					if _, required := attrVal(n.Attr, "required"); required {
 						value = "test"
 					}
 					params[name] = value
@@ -150,12 +147,11 @@ func selectValue(selectNode *html.Node) string {
 	var walk func(n *html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && n.Data == "option" {
-			a := attrMap(n.Attr)
-			v := a["value"]
+			v := attrStr(n.Attr, "value")
 			if first == "" {
 				first = v
 			}
-			if _, ok := a["selected"]; ok {
+			if _, ok := attrVal(n.Attr, "selected"); ok {
 				selected = v
 			}
 		}
