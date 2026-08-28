@@ -89,13 +89,9 @@ func parseChcrawl(seedURL string, stdout []byte) map[string]bool {
 }
 
 // parseChcrawlSummary extracts the "summary" record from a chcrawl run's
-// JSONL stdout — retry telemetry, requests made, and duration as chcrawl
-// itself measured them from inside the crawl. ok is false if no summary
-// record is found, which is always the case for every other tool's
-// output (none of katana/hakrawler/gospider ever emit chcrawl's JSONL
-// schema), so callers can use this as a generic "does this competitor
-// expose equivalent instrumentation" check without any tool-specific
-// branching — never fabricating a value for a tool that doesn't report one.
+// JSONL stdout. ok is false if none is found, which is always true for the
+// other tools (none emit chcrawl's JSONL schema) — lets callers check for
+// equivalent instrumentation without tool-specific branching.
 func parseChcrawlSummary(stdout []byte) (activeWall, retryBackoff time.Duration, retryAttempts, requestsMade int64, ok bool) {
 	scanner := bufio.NewScanner(bytes.NewReader(stdout))
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)

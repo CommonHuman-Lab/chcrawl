@@ -17,17 +17,20 @@ import (
 )
 
 // RunOptions controls how a workload is executed. Defaults are generous
-// enough to let every workload fully traverse (no MaxPages/MaxDepth
-// cutoffs mid-workload), so the oracle comparison is measuring discovery
-// correctness, not budget exhaustion.
+// enough that no workload hits a MaxPages/MaxDepth cutoff, so the oracle
+// comparison measures discovery correctness, not budget exhaustion.
 type RunOptions struct {
 	MaxDepth           int
 	MaxPages           int
+	MaxFrontierSize    int // 0 = config's own default (100_000); large-scale workloads override this
 	SameOrigin         bool
 	Concurrency        int
 	PerHostConcurrency int
 	MaxBodyBytes       int64
 	DisableRetry       bool
+	// Zero values match config's production defaults (StrictMode, SortQueryParams=false).
+	Canonicalization config.CanonicalizationMode
+	SortQueryParams  bool
 }
 
 func (o RunOptions) withDefaults() RunOptions {
@@ -83,6 +86,11 @@ func Run(ctx context.Context, site *Site, sameOrigin bool, opts RunOptions) (*Re
 		config.WithSameOrigin(opts.SameOrigin),
 		config.WithMaxBodyBytes(opts.MaxBodyBytes),
 		config.WithTimeout(10 * time.Second),
+		config.WithCanonicalization(opts.Canonicalization),
+		config.WithSortQueryParams(opts.SortQueryParams),
+	}
+	if opts.MaxFrontierSize > 0 {
+		cfgOpts = append(cfgOpts, config.WithMaxFrontierSize(opts.MaxFrontierSize))
 	}
 	if opts.DisableRetry {
 		cfgOpts = append(cfgOpts, config.WithRetryPolicy(nil))
@@ -110,7 +118,7 @@ func Run(ctx context.Context, site *Site, sameOrigin bool, opts RunOptions) (*Re
 
 	runtime.ReadMemStats(&after)
 
-	oracle := site.Compute(opts.MaxDepth, opts.SameOrigin)
+	oracle := site.Compute(opts.MaxDepth, opts.SameOrigin, opts.Canonicalization, opts.SortQueryParams)
 
 	r := &Result{
 		Workload:       site.Name,

@@ -3,14 +3,11 @@ package benchlab
 // DiscoverablePaths returns the set of URL paths a well-behaved crawler
 // could reach from the seed by following links, script srcs, and form
 // actions (redirect-resolved), within maxDepth and in scope — the ground
-// truth that external tools' reported coverage is scored against.
+// truth external tools' coverage is scored against.
 //
-// Deduped by path only, not query string: query-string dedup conventions
-// differ across crawlers (chcrawl normalizes and optionally sorts params;
-// katana has an opt-in -iqp flag; hakrawler and gospider have none), and
-// "did this crawler find the page" shouldn't hinge on that divergence.
-// Only single-host sites are supported — multi-host scope semantics are
-// too tool-specific (different scope flags/defaults) to score fairly.
+// Deduped by path only (query-string dedup conventions differ across
+// crawlers). Only single-host sites are supported — multi-host scope
+// semantics are too tool-specific to score fairly.
 func (s *Site) DiscoverablePaths(maxDepth int, sameOrigin bool) map[string]bool {
 	pages := map[key]PageSpec{}
 	for _, p := range s.Pages {

@@ -23,9 +23,8 @@ type CompetitorReportMeta struct {
 // evaluate), then the three external tools in the order they were added.
 var competitorToolOrder = []string{"chcrawl", "katana", "hakrawler", "gospider"}
 
-// WriteCompetitorJSON writes the full machine-readable, reproducible
-// report: every sample (not just summary statistics), environment, tool
-// versions, and run configuration.
+// WriteCompetitorJSON writes the full machine-readable report: every
+// sample, environment, tool versions, and run configuration.
 func WriteCompetitorJSON(w io.Writer, meta CompetitorReportMeta, results map[string]map[string]*CompetitorStats) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

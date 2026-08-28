@@ -9,30 +9,20 @@ import (
 )
 
 // MetricBasis selects which per-sample series drives a StatsReport's
-// headline Median/P90/P95/P99/Min/Max/StdDev/RPS columns. Both bases are
-// always computed from the same measured runs against the real, unchanged
-// retry.Policy — this never re-runs with a different policy, it only
-// re-slices which already-collected series is presented as the headline.
+// headline columns. Both bases come from the same measured runs against the
+// real retry.Policy — this only re-slices which series is presented.
 type MetricBasis string
 
 const (
-	// BasisDuration is the production number: wall-clock time including
-	// whatever the retry policy decided to do. This is chcrawl's real,
-	// user-facing performance number and is the default.
+	// BasisDuration is the production number: wall-clock time including retry backoff. Default.
 	BasisDuration MetricBasis = "duration"
-	// BasisActiveWall reports engine execution time with measured retry
-	// backoff subtracted out — NOT a production number, and NOT CPU time.
-	// Useful only for isolating crawl-engine performance from deliberate
-	// resilience-policy waiting (e.g. to compare against a tool that
-	// doesn't retry 5xx at all without that difference dominating the
-	// comparison).
+	// BasisActiveWall is engine time with measured retry backoff subtracted — NOT CPU time,
+	// NOT a production number. Isolates crawl-engine performance from resilience-policy waiting.
 	BasisActiveWall MetricBasis = "active_wall"
 )
 
-// BasisStats returns ws.Duration or ws.ActiveWall depending on basis — the
-// same selection WriteStatsReport's headline table uses, exported so
-// callers (e.g. cmd/chcrawl-bench's progress log) can stay consistent with
-// the report without duplicating the selection logic.
+// BasisStats returns ws.Duration or ws.ActiveWall depending on basis, exported
+// so callers can stay consistent with the report without duplicating the selection.
 func (ws *WorkloadStats) BasisStats(basis MetricBasis) MetricStats {
 	if basis == BasisActiveWall {
 		return ws.ActiveWall
@@ -51,9 +41,8 @@ type StatsReportMeta struct {
 	GeneratedAt  time.Time   `json:"generated_at"`
 }
 
-// WriteStatsJSON writes the full machine-readable report: every collected
-// sample, not just the summary statistics, so downstream tooling can
-// recompute anything this package's own MetricStats derives.
+// WriteStatsJSON writes the full machine-readable report, including every
+// collected sample so downstream tooling can recompute derived statistics.
 func WriteStatsJSON(w io.Writer, meta StatsReportMeta, results map[string]*WorkloadStats) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -64,10 +53,8 @@ func WriteStatsJSON(w io.Writer, meta StatsReportMeta, results map[string]*Workl
 }
 
 // WriteStatsReport renders the human-readable multi-run report: a headline
-// table in the basis meta.MetricBasis selects, a full per-workload
-// min/median/mean/p90/p95/p99/max/stddev breakdown for BOTH bases, and a
-// methodology section documenting every measurement decision this suite
-// makes, per the requirements that produced it.
+// table in meta.MetricBasis, a full per-workload stats breakdown for both
+// bases, and a methodology section.
 func WriteStatsReport(w io.Writer, meta StatsReportMeta, results map[string]*WorkloadStats) {
 	names := make([]string, 0, len(results))
 	for name := range results {
@@ -154,11 +141,9 @@ func writeMetricRow(w io.Writer, label string, s MetricStats) {
 		fmtDur(s.P95), fmtDur(s.P99), fmtDur(s.Max), fmtDur(s.StdDev))
 }
 
-// medianBackoffActive recomputes the median backoff/active pair directly
-// from the samples (not derived from the duration/active_wall MetricStats,
-// which are independently sorted series and wouldn't necessarily pair back
-// to the same run) so the headline row's backoff+active always sum
-// consistently with a real observed run.
+// medianBackoffActive recomputes the pair directly from the samples rather
+// than from the independently-sorted duration/active_wall MetricStats, so
+// backoff+active always come from the same observed run.
 func medianBackoffActive(ws *WorkloadStats) (backoff, active time.Duration) {
 	n := len(ws.Samples)
 	if n == 0 {

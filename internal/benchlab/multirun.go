@@ -5,17 +5,10 @@ import (
 	"fmt"
 )
 
-// RunMany runs site through the real engine warmups+runs times (each a
-// fully independent Run() call: fresh httptest servers, fresh engine, fresh
-// dedup/frontier state — see Run), discards the warmups, and returns
-// statistics computed from the runs measured samples.
-//
-// Correctness is checked on every measured sample, not just the first —
-// see WorkloadStats.Status. A warmup iteration that itself fails the oracle
-// diff is not treated as a correctness failure (only measured samples
-// count), but a hard error from Run (e.g. a config/transport problem, not a
-// discovery mismatch) aborts immediately during warmup or measurement
-// alike, since that's not a benchmark result at all.
+// RunMany runs site through the real engine warmups+runs times (each a fully
+// independent Run() call), discards the warmups, and returns statistics from
+// the runs measured samples. A failed oracle diff during warmup is not a
+// correctness failure, but any hard error from Run aborts immediately.
 func RunMany(ctx context.Context, site *Site, sameOrigin bool, opts RunOptions, warmups, runs int) (*WorkloadStats, error) {
 	if runs < 1 {
 		runs = 1

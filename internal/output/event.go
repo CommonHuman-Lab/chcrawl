@@ -69,25 +69,13 @@ type SummaryEvent struct {
 	RobotsDisallowed    int64         `json:"robots_disallowed"`
 	SourceMapsRecovered int64         `json:"source_maps_recovered"`
 	OpenAPIEndpoints    int64         `json:"openapi_endpoints_discovered"`
-	// RetryAttempts and RetryBackoffMS total every retry the active
-	// retry.Policy decided to make across the whole crawl, and the
-	// cumulative backoff time deliberately slept for them.
-	//
-	// ActiveWallMS is Duration minus RetryBackoffMS (floored at 0): wall-clock
-	// time NOT spent in deliberate retry backoff. It is derived entirely from
-	// wall-clock measurements — it is NOT CPU time, and says nothing about
-	// actual processor usage. It is exact only when at most one fetch is
-	// retrying at a time; if multiple fetches retry concurrently, their
-	// backoff windows can overlap on the wall clock while this field sums
-	// them independently, so RetryBackoffMS can exceed Duration and
-	// ActiveWallMS floors at 0 rather than going negative.
+	// ActiveWallMS is wall-clock Duration minus RetryBackoffMS (floored at 0,
+	// not CPU time); concurrent retries can overlap on the wall clock while
+	// RetryBackoffMS sums them independently, so it can exceed Duration.
 	RetryAttempts int64 `json:"retry_attempts"`
-	// RetryBackoff/ActiveWall are full nanosecond precision (matching
-	// Duration); RetryBackoffMS/ActiveWallMS are millisecond convenience
-	// copies for quick reading in a JSONL stream. Anything computing
-	// statistics over these values (e.g. internal/benchlab) should use the
-	// nanosecond fields — millisecond rounding measurably distorts
-	// sub-millisecond-scale workloads.
+	// RetryBackoff/ActiveWall are nanosecond precision; the MS fields are
+	// rounded convenience copies. Prefer the ns fields for statistics — ms
+	// rounding distorts sub-millisecond workloads.
 	RetryBackoff   time.Duration `json:"retry_backoff_ns"`
 	ActiveWall     time.Duration `json:"active_wall_ns"`
 	RetryBackoffMS int64         `json:"retry_backoff_ms"`

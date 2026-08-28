@@ -3,13 +3,15 @@ package benchlab
 import (
 	"net/url"
 	"strings"
+
+	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/internal/normalize"
 )
 
 // Oracle is the expected-correct outcome of crawling a Site, computed by
-// walking the same PageSpec graph used to build the HTTP target — so the
-// target and the oracle can never drift apart, the way a hand-written
-// expected-count comment easily could. Field names and semantics mirror
-// output.SummaryEvent so a runner can compare them directly.
+// walking the same PageSpec graph used to build the HTTP target so the two
+// can never drift apart. Field names/semantics mirror output.SummaryEvent
+// so a runner can compare them directly.
 type Oracle struct {
 	PagesVisited       int
 	Forms              int
@@ -39,11 +41,9 @@ func pathOnly(p string) string {
 	return p
 }
 
-// resolveRedirects follows p.Redirect chains (within one host, matching
-// how the synthetic site's links are structured) up to maxRedirectHops,
-// returning the terminal PageSpec and hop count, or ok=false on a loop or
-// an unresolvable target — the same outcome a real too-many-redirects
-// error produces in the engine.
+// resolveRedirects follows p.Redirect chains (within one host) up to
+// maxRedirectHops, returning ok=false on a loop or unresolvable target —
+// mirrors the engine's too-many-redirects error.
 func lookup(pages map[key]PageSpec, k key) (PageSpec, bool) {
 	p, ok := pages[key{host: k.host, path: pathOnly(k.path)}]
 	return p, ok
@@ -69,11 +69,15 @@ func resolveRedirects(pages map[key]PageSpec, start key) (final PageSpec, hops i
 	return PageSpec{}, hops, false
 }
 
-// Compute walks the site's link graph the same way the real engine's
-// pipeline does: enqueue-time dedup, scope checked before depth, a page's
-// own content only explored if its resolved final status is < 400 and it
-// was reached within maxDepth.
-func (s *Site) Compute(maxDepth int, sameOrigin bool) Oracle {
+// Compute walks the site's link graph the same way the engine's pipeline
+// does: enqueue-time dedup, scope checked before depth, content explored
+// only if status < 400 and reached within maxDepth.
+//
+// canon/sortQuery must match the RunOptions the target is measured with:
+// the real engine dedups on normalize.URL(childURL, canon, sortQuery), so
+// using the raw href here would make the oracle expect duplicate fetches
+// the real engine never makes.
+func (s *Site) Compute(maxDepth int, sameOrigin bool, canon config.CanonicalizationMode, sortQuery bool) Oracle {
 	pages := map[key]PageSpec{}
 	for _, p := range s.Pages {
 		pages[key{host: p.Host, path: p.Path}] = p
@@ -81,7 +85,7 @@ func (s *Site) Compute(maxDepth int, sameOrigin bool) Oracle {
 
 	hosts := s.hostsOrDefault()
 	seedHost := hosts[0]
-	seed := key{host: seedHost, path: s.Seed}
+	seed := key{host: seedHost, path: normalize.URL(s.Seed, canon, sortQuery)}
 
 	var o Oracle
 	visited := map[key]bool{seed: true}
@@ -161,6 +165,7 @@ func (s *Site) Compute(maxDepth int, sameOrigin bool) Oracle {
 
 		for _, link := range children {
 			childKey := parseLinkKey(link, item.k.host)
+			childKey.path = normalize.URL(childKey.path, canon, sortQuery)
 			if !inScope(childKey) {
 				continue
 			}

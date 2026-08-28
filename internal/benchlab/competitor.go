@@ -131,13 +131,10 @@ func (cs *CompetitorStats) finalize() {
 const competitorPerCallTimeout = 60 * time.Second
 
 // RunCompetitorMany runs tool against site warmups+runs times — each a
-// fresh site.Start() (matching RunMany's per-iteration isolation for
-// chcrawl's own engine benchmark: fresh servers, no shared state) and a
-// fresh subprocess invocation — and scores every measured run against the
-// same DiscoverablePaths ground truth RunComparison uses. Warmups are
-// discarded entirely, including from correctness accounting. If tool's
-// binary isn't on PATH, no samples are collected and Status is
-// "UNAVAILABLE" — never silently skipped without a visible marker.
+// fresh site.Start() and subprocess invocation — scoring every measured run
+// against the same DiscoverablePaths ground truth RunComparison uses.
+// Warmups are discarded entirely. If tool's binary isn't on PATH, Status is
+// "UNAVAILABLE" rather than silently skipped.
 func RunCompetitorMany(ctx context.Context, site *Site, maxDepth, warmups, runs int, tool Tool) *CompetitorStats {
 	cs := &CompetitorStats{Tool: tool.Name, Workload: site.Name, Warmups: warmups}
 	cs.GroundTruthTotal = len(site.DiscoverablePaths(maxDepth, true))

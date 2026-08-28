@@ -11,11 +11,9 @@ import (
 	"strings"
 )
 
-// Environment captures the machine and tool-version context a benchmark
-// result was produced under, so a result can be reproduced or at least
-// sanity-checked against the same conditions. Every field is best-effort:
-// a value that can't be determined is left at its zero value rather than
-// guessed.
+// Environment captures the machine/tool-version context a benchmark result
+// was produced under. Every field is best-effort: unknown values are left
+// at zero rather than guessed.
 type Environment struct {
 	OS            string            `json:"os"`
 	Arch          string            `json:"arch"`
@@ -31,9 +29,7 @@ type Environment struct {
 var katanaVersionRe = regexp.MustCompile(`(?i)version:\s*(\S+)`)
 
 // CaptureEnvironment gathers the machine/tool-version context for the
-// current run. Linux-specific probes (/proc/cpuinfo, /proc/meminfo) are
-// skipped on other platforms rather than guessed, matching the rest of
-// this package's Linux-best-effort convention (see peakRSSBytes).
+// current run. Linux-specific probes are skipped on other platforms.
 func CaptureEnvironment() Environment {
 	env := Environment{
 		OS:          runtime.GOOS,
@@ -65,10 +61,7 @@ func katanaVersion() string {
 	return ""
 }
 
-// hakrawlerVersion has no -version flag; fall back to the Debian/Kali
-// package version where available (this dev environment's install path),
-// otherwise leave it blank rather than guess — documented as a limitation
-// in the final report.
+// hakrawler has no -version flag; fall back to the dpkg package version.
 func hakrawlerVersion() string {
 	out := runOut("dpkg-query", "-W", "-f=${Version}", "hakrawler")
 	return firstLine(out)

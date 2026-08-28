@@ -21,10 +21,9 @@ type Sample struct {
 	Diffs         []string      `json:"diffs,omitempty"`
 }
 
-// MetricStats summarizes a set of duration samples. Every field is computed
-// from the individual per-run samples directly, never from an
-// already-aggregated total — an aggregate (e.g. sum-of-durations /
-// sum-of-runs) cannot recover a distribution's percentiles or spread.
+// MetricStats summarizes a set of duration samples, computed from the
+// individual per-run samples directly (an aggregated total can't recover
+// percentiles or spread).
 type MetricStats struct {
 	Min    time.Duration `json:"min_ns"`
 	Max    time.Duration `json:"max_ns"`
@@ -36,15 +35,9 @@ type MetricStats struct {
 	StdDev time.Duration `json:"stddev_ns"`
 }
 
-// percentile returns the p-th percentile (0 < p <= 100) of sorted (which
-// must already be sorted ascending) using the nearest-rank method:
-// rank = ceil(p/100 * n), 1-indexed and clamped to [1, n]. This is the same
-// method common load-testing tools (wrk, hey, ab) use, and is well-defined
-// for any sample size — but with a small N (this suite defaults to 30),
-// P99's nearest rank is n itself, i.e. P99 == Max. That's an honest
-// property of small-sample tail estimation, not a defect in the method:
-// resolving a true P99 requires hundreds of samples, and this benchmark
-// intentionally stays fast enough to run in a CI-sized time budget instead.
+// percentile returns the p-th percentile (0 < p <= 100) of sorted (must
+// already be ascending) using the nearest-rank method: rank = ceil(p/100 * n).
+// With this suite's default N=30, P99's nearest rank is n itself, so P99 == Max.
 func percentile(sorted []time.Duration, p float64) time.Duration {
 	n := len(sorted)
 	if n == 0 {
