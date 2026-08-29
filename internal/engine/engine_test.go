@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"testing"
 	"time"
@@ -177,6 +180,69 @@ func TestCrawl_MaxPagesHardCap(t *testing.T) {
 	}
 	if summary.ResponsesOK > 8 {
 		t.Errorf("MaxPages=5 hard cap should stop the crawl close to the budget, got %d successful responses", summary.ResponsesOK)
+	}
+}
+
+func TestRun_NoGoroutineLeakAfterMidCrawlCancellation(t *testing.T) {
+	leakProfile := pprof.Lookup("goroutineleak")
+	if leakProfile == nil {
+		t.Skip("goroutineleak profile not available on this Go toolchain (added in Go 1.27)")
+	}
+
+	release := make(chan struct{})
+	defer close(release) // let any still-blocked handler goroutines finish once the test is done asserting
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<a href="/1">1</a><a href="/2">2</a><a href="/3">3</a><a href="/4">4</a>`))
+	})
+	slow := func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`leaf`))
+	}
+	for _, p := range []string{"/1", "/2", "/3", "/4"} {
+		mux.HandleFunc(p, slow)
+	}
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	cfg, err := config.New(srv.URL+"/",
+		config.WithConcurrency(4),
+		config.WithPerHostConcurrency(4),
+		config.WithMaxPages(20),
+		config.WithMaxDepth(3),
+		config.WithTimeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	rec := &recordingWriter{}
+	eng, err := New(cfg, output.NewWriter(rec))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Short enough to cancel while the /1../4 requests are still blocked on
+	// release, forcing Run down its ctx.Done() shutdown path mid-crawl.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	if _, err := eng.Run(ctx); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	runtime.GC()
+	if err := leakProfile.WriteTo(io.Discard, 1); err != nil {
+		t.Fatalf("goroutineleak WriteTo: %v", err)
+	}
+	if n := leakProfile.Count(); n > 0 {
+		t.Errorf("Run returned but goroutineleak profile reports %d leaked goroutine(s)", n)
 	}
 }
 
