@@ -230,7 +230,7 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 	}
 
 	limited := io.LimitReader(resp.Body, f.maxBodyBytes+1)
-	body, err := io.ReadAll(limited)
+	body, err := readBody(limited, resp.ContentLength, f.maxBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -251,6 +251,16 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 		Truncated:     truncated,
 		FetchDuration: time.Since(start),
 	}, nil
+}
+
+func readBody(r io.Reader, contentLength, maxBodyBytes int64) ([]byte, error) {
+	if contentLength <= 0 || contentLength > maxBodyBytes {
+		return io.ReadAll(r)
+	}
+	var buf bytes.Buffer
+	buf.Grow(int(contentLength) + bytes.MinRead)
+	_, err := buf.ReadFrom(r)
+	return buf.Bytes(), err
 }
 
 func contentTypeAllowed(contentType string, allowed []string) bool {
