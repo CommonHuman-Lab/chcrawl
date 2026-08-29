@@ -17,6 +17,9 @@ type Sample struct {
 	RequestsMade  int64         `json:"requests_made"`
 	RPS           float64       `json:"rps"`
 	PeakRSSBytes  uint64        `json:"peak_rss_bytes"`
+	GCPauseNs     time.Duration `json:"gc_pause_ns"`     // stop-the-world pause time during this run only
+	NumGC         uint32        `json:"num_gc"`          // GC cycles during this run only
+	GCCPUFraction float64       `json:"gc_cpu_fraction"` // cumulative since process start, see Result.GCCPUFraction
 	Passed        bool          `json:"passed"`
 	Diffs         []string      `json:"diffs,omitempty"`
 }

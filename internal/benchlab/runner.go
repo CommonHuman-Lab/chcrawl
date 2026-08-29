@@ -62,6 +62,9 @@ type Result struct {
 	Diffs          []string
 	PeakRSSBytes   uint64
 	HeapAllocDelta uint64
+	GCPauseDelta   time.Duration // sum of stop-the-world pause time during this run only
+	NumGCDelta     uint32        // GC cycles during this run only
+	GCCPUFraction  float64       // fraction of CPU time spent in GC, cumulative since process start
 }
 
 // Passed reports whether every compared metric matched the oracle exactly.
@@ -127,6 +130,9 @@ func Run(ctx context.Context, site *Site, sameOrigin bool, opts RunOptions) (*Re
 		Oracle:         oracle,
 		PeakRSSBytes:   peakRSSBytes(),
 		HeapAllocDelta: after.TotalAlloc - before.TotalAlloc,
+		GCPauseDelta:   time.Duration(after.PauseTotalNs - before.PauseTotalNs),
+		NumGCDelta:     after.NumGC - before.NumGC,
+		GCCPUFraction:  after.GCCPUFraction,
 	}
 	r.Diffs = diff(oracle, *summary)
 	return r, nil
