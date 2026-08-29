@@ -45,7 +45,7 @@ func (t Tool) Available() bool {
 // chcrawl. Each is scored only if its binary is present on PATH — a
 // missing tool is reported as "not installed", not a failure.
 func ExternalTools() []Tool {
-	return []Tool{katanaTool(), hakrawlerTool(), gospiderTool()}
+	return []Tool{hakrawlerTool(), gospiderTool()}
 }
 
 // ChcrawlTool wraps a pre-built chcrawl binary as a Tool, using the same

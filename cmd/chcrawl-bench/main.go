@@ -26,11 +26,19 @@ func main() {
 	}
 }
 
+func externalToolsDesc() string {
+	names := make([]string, 0, len(benchlab.ExternalTools()))
+	for _, t := range benchlab.ExternalTools() {
+		names = append(names, t.Name)
+	}
+	return strings.Join(names, "/")
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("chcrawl-bench", flag.ContinueOnError)
 	workload := fs.String("workload", "", "run only this workload (default: all)")
 	reportPath := fs.String("report", "", "write the report to this path (default: stdout)")
-	compare := fs.Bool("compare", false, "score chcrawl against katana/hakrawler/gospider (any not installed are reported, not required) instead of the oracle correctness run")
+	compare := fs.Bool("compare", false, fmt.Sprintf("score chcrawl against %s (any not installed are reported, not required) instead of the oracle correctness run", externalToolsDesc()))
 	retryDisabledComparison := fs.Bool("retry-disabled-comparison", false,
 		"run with retries OFF, for apples-to-apples raw crawl-speed comparison against tools that don't retry 5xx by default — NOT the production default, reported separately, never merged with the normal run")
 	runs := fs.Int("runs", 30, "measured iterations per workload; -runs 1 uses the original single-run report instead of statistics")
@@ -41,7 +49,7 @@ func run(args []string) error {
 	internalWorker := fs.String("internal-worker", "",
 		"internal use only: measure just this one workload in this process and print its statistics as JSON to stdout. Used by the parent process to isolate each workload's peak-RSS measurement in its own subprocess — see README.md")
 	competitorBench := fs.Bool("competitor-bench", false,
-		"run the full statistically-hardened competitor comparison (chcrawl/katana/hakrawler/gospider, -runs measured iterations each, correctness-checked every run) instead of chcrawl-only benchmarking")
+		fmt.Sprintf("run the full statistically-hardened competitor comparison (chcrawl/%s, -runs measured iterations each, correctness-checked every run) instead of chcrawl-only benchmarking", externalToolsDesc()))
 	scaleBench := fs.Bool("scale-bench", false,
 		"run the large-scale scalability suite (S1-S6: 100 to 100,000+ URLs) instead of the small-workload suite")
 	scaleFamily := fs.String("scale-family", "", "run only this scale family (default: all six; see benchlab.ScaleFamilies)")
@@ -667,8 +675,9 @@ func runOracle(workload, reportPath string, disableRetry bool) error {
 }
 
 // runCompetitorBench runs the statistically-hardened comparison: chcrawl (as
-// an external subprocess, like the other three) plus katana/hakrawler/gospider,
-// warmups+runs times each, against every comparison-eligible workload.
+// an external subprocess, like the others) plus whichever tools
+// benchlab.ExternalTools() has active, warmups+runs times each, against
+// every comparison-eligible workload.
 func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut bool) error {
 	binPath, cleanup, err := buildChcrawlBinary()
 	if err != nil {
@@ -748,9 +757,9 @@ func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut 
 const compareMaxDepth = 40
 
 // runCompare builds a throwaway chcrawl binary and scores it against
-// katana/hakrawler/gospider (whichever are installed) on every
-// comparison-eligible workload, excluding the multi-host one whose scope
-// semantics aren't comparable across tools.
+// whichever tools benchlab.ExternalTools() has active (and are installed)
+// on every comparison-eligible workload, excluding the multi-host one whose
+// scope semantics aren't comparable across tools.
 func runCompare(workload, reportPath string) error {
 	binPath, cleanup, err := buildChcrawlBinary()
 	if err != nil {

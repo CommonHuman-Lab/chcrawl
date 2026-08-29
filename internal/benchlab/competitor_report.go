@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -18,10 +19,23 @@ type CompetitorReportMeta struct {
 	Environment Environment `json:"environment"`
 }
 
-// competitorToolOrder is the fixed, always-in-this-order presentation for
-// every table — chcrawl first (the tool this benchmark exists to
-// evaluate), then the three external tools in the order they were added.
-var competitorToolOrder = []string{"chcrawl", "katana", "hakrawler", "gospider"}
+func competitorToolOrder() []string {
+	order := []string{"chcrawl"}
+	for _, t := range ExternalTools() {
+		order = append(order, t.Name)
+	}
+	return order
+}
+
+// externalToolNames is competitorToolOrder without chcrawl — the tools
+// this report is actually comparing chcrawl against.
+func externalToolNames() []string {
+	names := make([]string, 0, len(ExternalTools()))
+	for _, t := range ExternalTools() {
+		names = append(names, t.Name)
+	}
+	return names
+}
 
 // WriteCompetitorJSON writes the full machine-readable report: every
 // sample, environment, tool versions, and run configuration.
@@ -45,7 +59,8 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	}
 	sort.Strings(workloads)
 
-	fmt.Fprintf(w, "# chcrawl vs. katana vs. hakrawler vs. gospider\n\n")
+	order := competitorToolOrder()
+	fmt.Fprintf(w, "# %s\n\n", strings.Join(order, " vs. "))
 	writeCompetitorEnvironment(w, meta)
 
 	fmt.Fprintf(w, "## Methodology\n\n")
@@ -65,7 +80,7 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "(Linux) — genuinely isolated per invocation, with no cross-run or\n")
 	fmt.Fprintf(w, "cross-tool contamination risk, since every invocation is already its own\n")
 	fmt.Fprintf(w, "fresh OS process. `w9-multi-host-scope` is excluded: same-origin scope is\n")
-	fmt.Fprintf(w, "implemented differently enough across these four tools (registered-domain\n")
+	fmt.Fprintf(w, "implemented differently enough across these %d tools (registered-domain\n", len(order))
 	fmt.Fprintf(w, "matching, subdomain flags, no built-in concept at all) that scoring it\n")
 	fmt.Fprintf(w, "wouldn't be a fair comparison.\n\n")
 	writeCompetitorConfiguration(w, meta)
@@ -80,7 +95,7 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "## View 2: engine/active diagnostic\n\n")
 	fmt.Fprintf(w, "Wall-clock time with measured retry backoff excluded — NOT CPU time, NOT\n")
 	fmt.Fprintf(w, "a production number. Only chcrawl exposes this (`active_wall`, from its own\n")
-	fmt.Fprintf(w, "JSONL summary record); none of katana/hakrawler/gospider expose an\n")
+	fmt.Fprintf(w, "JSONL summary record); none of %s expose an\n", strings.Join(externalToolNames(), "/"))
 	fmt.Fprintf(w, "equivalent retry/backoff breakdown, so their rows report `N/A` rather than\n")
 	fmt.Fprintf(w, "an inferred or estimated value.\n\n")
 	writeActiveWallTable(w, workloads, results)
@@ -118,8 +133,12 @@ func writeCompetitorEnvironment(w io.Writer, meta CompetitorReportMeta) {
 	if e.GitCommit != "" {
 		fmt.Fprintf(w, "Git commit:    %s (chcrawl + benchmark harness — same repository)\n", e.GitCommit)
 	}
-	fmt.Fprintf(w, "Tool versions: katana=%s hakrawler=%s gospider=%s\n",
-		orNA(e.ToolVersions["katana"]), orNA(e.ToolVersions["hakrawler"]), orNA(e.ToolVersions["gospider"]))
+	names := externalToolNames()
+	versions := make([]string, 0, len(names))
+	for _, name := range names {
+		versions = append(versions, fmt.Sprintf("%s=%s", name, orNA(e.ToolVersions[name])))
+	}
+	fmt.Fprintf(w, "Tool versions: %s\n", strings.Join(versions, " "))
 	fmt.Fprintf(w, "```\n\n")
 }
 
@@ -130,16 +149,45 @@ func orNA(s string) string {
 	return s
 }
 
+// joinNatural joins names as an English list: "a", "a and b", or
+// "a, b, and c" — used where report prose names the active external tools
+// directly instead of a table column.
+func joinNatural(names []string) string {
+	switch len(names) {
+	case 0:
+		return "(no external tools active)"
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " and " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", and " + names[len(names)-1]
+	}
+}
+
+// competitorConfigRows are the documented per-tool config-table rows, keyed
+// by Tool.Name. Only rows for tools currently in competitorToolOrder are
+// printed — see writeCompetitorConfiguration.
+var competitorConfigRows = map[string]string{
+	"chcrawl":   "| chcrawl | default (10 workers) | %[1]d (-max-depth) | JS endpoint mining always on (static regex miner, no headless) | production default: 3 retries, exponential backoff, 429+5xx | 5s (-timeout) | followed (engine default cap) | chcrawl default | JSONL to stdout |\n",
+	"katana":    "| katana | -c 10 | %[1]d (-d) | -jc (JS endpoint parsing, non-headless) | -retry 1 | -timeout 5 | followed (katana default) | katana default | -jsonl -silent |\n",
+	"hakrawler": "| hakrawler | -t 10 | %[1]d (-d) | none (hakrawler has no JS-mining mode) | none exposed | -timeout 5 | followed (hakrawler default) | hakrawler default | -json |\n",
+	"gospider":  "| gospider | -t 1 -c 5 | %[1]d (-d) | linkfinder (regex JS miner, non-headless) | none exposed | -m 5 | followed (gospider default) | gospider default (\"web\") | plain tagged stdout |\n",
+}
+
 func writeCompetitorConfiguration(w io.Writer, meta CompetitorReportMeta) {
+	order := competitorToolOrder()
 	fmt.Fprintf(w, "### Tool configuration\n\n")
 	fmt.Fprintf(w, "Every tool uses plain HTTP crawling — no headless/browser mode is enabled\n")
-	fmt.Fprintf(w, "for any tool. All four are given the same crawl depth (%d).\n\n", meta.MaxDepth)
+	fmt.Fprintf(w, "for any tool. All %d are given the same crawl depth (%d).\n\n", len(order), meta.MaxDepth)
 	fmt.Fprintf(w, "| tool | concurrency | depth | JS mode | retries | timeout | redirects | user agent | output |\n")
 	fmt.Fprintf(w, "|---|---|---|---|---|---|---|---|---|\n")
-	fmt.Fprintf(w, "| chcrawl | default (10 workers) | %d (-max-depth) | JS endpoint mining always on (static regex miner, no headless) | production default: 3 retries, exponential backoff, 429+5xx | 5s (-timeout) | followed (engine default cap) | chcrawl default | JSONL to stdout |\n", meta.MaxDepth)
-	fmt.Fprintf(w, "| katana | -c 10 | %d (-d) | -jc (JS endpoint parsing, non-headless) | -retry 1 | -timeout 5 | followed (katana default) | katana default | -jsonl -silent |\n", meta.MaxDepth)
-	fmt.Fprintf(w, "| hakrawler | -t 10 | %d (-d) | none (hakrawler has no JS-mining mode) | none exposed | -timeout 5 | followed (hakrawler default) | hakrawler default | -json |\n", meta.MaxDepth)
-	fmt.Fprintf(w, "| gospider | -t 1 -c 5 | %d (-d) | linkfinder (regex JS miner, non-headless) | none exposed | -m 5 | followed (gospider default) | gospider default (\"web\") | plain tagged stdout |\n\n", meta.MaxDepth)
+	for _, name := range order {
+		if row, ok := competitorConfigRows[name]; ok {
+			fmt.Fprintf(w, row, meta.MaxDepth)
+		}
+	}
+	fmt.Fprintf(w, "\n")
 	fmt.Fprintf(w, "Scope: same-origin only for every tool (workloads are single-host; see\n")
 	fmt.Fprintf(w, "w9-multi-host-scope exclusion above). See `internal/benchlab/tools.go` for\n")
 	fmt.Fprintf(w, "the exact command line each tool is invoked with.\n\n")
@@ -149,7 +197,7 @@ func writeProductionTable(w io.Writer, workloads []string, results map[string]ma
 	fmt.Fprintf(w, "| workload | competitor | runs | median | p95 | p99 | requests/sec | peak RSS | correctness | status |\n")
 	fmt.Fprintf(w, "|---|---|---:|---:|---:|---:|---:|---:|---|---|\n")
 	for _, wl := range workloads {
-		for _, tool := range competitorToolOrder {
+		for _, tool := range competitorToolOrder() {
 			cs := results[wl][tool]
 			if cs == nil {
 				continue
@@ -183,7 +231,7 @@ func writeActiveWallTable(w io.Writer, workloads []string, results map[string]ma
 	fmt.Fprintf(w, "| workload | competitor | active_wall (median) | retry backoff (median) | retry attempts (median run) |\n")
 	fmt.Fprintf(w, "|---|---|---:|---:|---:|\n")
 	for _, wl := range workloads {
-		for _, tool := range competitorToolOrder {
+		for _, tool := range competitorToolOrder() {
 			cs := results[wl][tool]
 			if cs == nil || !cs.Available {
 				continue
@@ -221,12 +269,13 @@ func medianActiveWallTriple(cs *CompetitorStats) (time.Duration, time.Duration, 
 }
 
 func writeCorrectnessTable(w io.Writer, workloads []string, results map[string]map[string]*CompetitorStats) {
-	fmt.Fprintf(w, "| workload | oracle size | chcrawl | katana | hakrawler | gospider |\n")
-	fmt.Fprintf(w, "|---|---:|---|---|---|---|\n")
+	order := competitorToolOrder()
+	fmt.Fprintf(w, "| workload | oracle size | %s |\n", strings.Join(order, " | "))
+	fmt.Fprintf(w, "|---|---:|%s\n", strings.Repeat("---|", len(order)))
 	for _, wl := range workloads {
 		var oracleSize int
-		cells := make([]string, len(competitorToolOrder))
-		for i, tool := range competitorToolOrder {
+		cells := make([]string, len(order))
+		for i, tool := range order {
 			cs := results[wl][tool]
 			if cs == nil {
 				cells[i] = "—"
@@ -241,20 +290,21 @@ func writeCorrectnessTable(w io.Writer, workloads []string, results map[string]m
 			}
 			cells[i] = fmt.Sprintf("%d/%d %s", cs.MinFound, cs.GroundTruthTotal, cs.Status)
 		}
-		fmt.Fprintf(w, "| %s | %d | %s | %s | %s | %s |\n", wl, oracleSize, cells[0], cells[1], cells[2], cells[3])
+		fmt.Fprintf(w, "| %s | %d | %s |\n", wl, oracleSize, strings.Join(cells, " | "))
 	}
 	fmt.Fprintf(w, "\n")
 }
 
 func writeCompetitorLimitations(w io.Writer) {
+	names := externalToolNames()
 	fmt.Fprintf(w, "## Behavioral differences and limitations\n\n")
-	fmt.Fprintf(w, "- **Retry/backoff instrumentation is chcrawl-only.** katana, hakrawler, and\n")
-	fmt.Fprintf(w, "  gospider expose no retry-count flag and no equivalent telemetry in their\n")
+	fmt.Fprintf(w, "- **Retry/backoff instrumentation is chcrawl-only.** %s\n", joinNatural(names))
+	fmt.Fprintf(w, "  expose no retry-count flag and no equivalent telemetry in their\n")
 	fmt.Fprintf(w, "  output, so View 2 reports `N/A` for them rather than an inferred value.\n")
 	fmt.Fprintf(w, "  This does not mean they never retry internally — only that this harness\n")
 	fmt.Fprintf(w, "  has no way to observe it, and does not pretend otherwise.\n")
 	fmt.Fprintf(w, "- **requests/sec is not uniformly measured.** Only chcrawl's JSONL summary\n")
-	fmt.Fprintf(w, "  reports a true HTTP request count; for the other three tools it's\n")
+	fmt.Fprintf(w, "  reports a true HTTP request count; for the other %d tools it's\n", len(names))
 	fmt.Fprintf(w, "  approximated as found-URLs/sec (marked with `*`), a related but distinct\n")
 	fmt.Fprintf(w, "  quantity — it excludes failed/redundant requests a tool may have made.\n")
 	fmt.Fprintf(w, "- **Every invocation is a fresh OS process for every tool, including\n")
@@ -270,7 +320,7 @@ func writeCompetitorLimitations(w io.Writer) {
 	fmt.Fprintf(w, "  genuinely reachable by following links/scripts/form actions) — the same\n")
 	fmt.Fprintf(w, "  ground truth `-compare` already used. It does not attempt to score form\n")
 	fmt.Fprintf(w, "  field extraction, parameter lists, or redirect-chain detail, since none\n")
-	fmt.Fprintf(w, "  of the three external tools report those in a comparably structured way.\n")
+	fmt.Fprintf(w, "  of the %d external tools report those in a comparably structured way.\n", len(names))
 	fmt.Fprintf(w, "- **No headless/browser mode is enabled for any tool** — this is a plain\n")
 	fmt.Fprintf(w, "  HTTP-crawling comparison. A separate JS-rendering benchmark, if wanted,\n")
 	fmt.Fprintf(w, "  would need its own workloads and is out of scope here.\n")
