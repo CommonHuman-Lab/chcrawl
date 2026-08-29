@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -35,12 +36,26 @@ type PageSpec struct {
 	Links          []string // paths (or "hostlabel:/path" for cross-host) this page links to
 	Forms          []FormSpec
 	ScriptSrcs     []string
+	DataLinks      []string     // paths surfaced only via data-href/data-url/data-link/data-action attributes, not <a href>
 	JSEndpoints    []JSEndpoint // if set, this page is served as JS containing fetch() calls for each
 	Redirect       string       // if set, this page 301s to this path instead of serving content
 	Status         int          // 0 = 200
 	DelayMS        int
-	PaddingKB      int  // filler bytes appended as an HTML comment, to reach a target body size
-	BadContentType bool // claim text/html but serve non-HTML bytes, to test parser tolerance
+	PaddingKB      int    // filler bytes appended as an HTML comment, to reach a target body size
+	BadContentType bool   // claim text/html but serve non-HTML bytes, to test parser tolerance
+	RawBody        string // if set, served verbatim instead of the generated HTML (e.g. malformed/deeply-nested markup); Content-Type is still text/html unless BadContentType/JSEndpoints/ContentTypeOverride override it
+	Empty          bool   // serve a zero-length 200 body instead of generated HTML
+	// ContentTypeOverride, if set, replaces the default "text/html"
+	// Content-Type — for exercising extractors' Applies() content-type
+	// gating against a genuinely non-HTML/non-JS response.
+	ContentTypeOverride string
+
+	// FailFirstNRequests, if > 0, makes the first N requests return
+	// FailStatus before the (N+1)th succeeds — for verifying a retry policy
+	// recovers a genuinely flaky page. The oracle is unaffected:
+	// Status/Redirect describe the page's eventual outcome.
+	FailFirstNRequests int
+	FailStatus         int // status served during the failing attempts; 0 defaults to 503
 }
 
 // Site is a full synthetic target: a set of hosts, each serving a set of
@@ -120,16 +135,14 @@ func (s *Site) Start() *Servers {
 	}
 }
 
-// exactPathHandler dispatches by exact URL path only. http.ServeMux's
-// classic pattern matching treats "/" as a subtree match that silently
-// catches every unregistered path (so a genuinely nonexistent path like
-// "/api/items/2" would fall through to the root page instead of 404ing) —
-// exact matching is what a benchmark oracle needs to reason about "this
-// page exists" vs "this page doesn't" deterministically.
+// exactPathHandler dispatches by exact URL path only: http.ServeMux's
+// classic "/" pattern silently catches every unregistered path, which would
+// make a nonexistent path fall through to the root page instead of 404ing.
 type exactPathHandler struct {
-	pages    map[string]PageSpec
-	baseURLs map[string]string
-	selfHost string
+	pages       map[string]PageSpec
+	baseURLs    map[string]string
+	selfHost    string
+	failCounter map[string]*atomic.Int32 // one entry per page with FailFirstNRequests > 0
 }
 
 func (h *exactPathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -138,15 +151,27 @@ func (h *exactPathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if c, has := h.failCounter[r.URL.Path]; has && c.Add(1) <= int32(p.FailFirstNRequests) {
+		status := p.FailStatus
+		if status == 0 {
+			status = http.StatusServiceUnavailable
+		}
+		w.WriteHeader(status)
+		return
+	}
 	servePage(w, p, h.baseURLs, h.selfHost)
 }
 
 func buildMux(pages []PageSpec, baseURLs map[string]string, selfHost string) http.Handler {
 	byPath := make(map[string]PageSpec, len(pages))
+	counters := map[string]*atomic.Int32{}
 	for _, p := range pages {
 		byPath[p.Path] = p
+		if p.FailFirstNRequests > 0 {
+			counters[p.Path] = new(atomic.Int32)
+		}
 	}
-	return &exactPathHandler{pages: byPath, baseURLs: baseURLs, selfHost: selfHost}
+	return &exactPathHandler{pages: byPath, baseURLs: baseURLs, selfHost: selfHost, failCounter: counters}
 }
 
 func servePage(w http.ResponseWriter, p PageSpec, baseURLs map[string]string, selfHost string) {
@@ -170,6 +195,12 @@ func servePage(w http.ResponseWriter, p PageSpec, baseURLs map[string]string, se
 		return
 	}
 
+	if p.Empty {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(status)
+		return
+	}
+
 	if p.JSEndpoints != nil {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.WriteHeader(status)
@@ -177,8 +208,16 @@ func servePage(w http.ResponseWriter, p PageSpec, baseURLs map[string]string, se
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html")
+	contentType := "text/html"
+	if p.ContentTypeOverride != "" {
+		contentType = p.ContentTypeOverride
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(status)
+	if p.RawBody != "" {
+		w.Write([]byte(p.RawBody))
+		return
+	}
 	w.Write([]byte(renderHTML(p, baseURLs, selfHost)))
 }
 
@@ -206,6 +245,9 @@ func renderHTML(p PageSpec, baseURLs map[string]string, selfHost string) string 
 	}
 	for _, src := range p.ScriptSrcs {
 		fmt.Fprintf(&b, "<script src=%q></script>\n", resolveLink(src, baseURLs, selfHost))
+	}
+	for i, link := range p.DataLinks {
+		fmt.Fprintf(&b, "<div data-href=%q>datalink%d</div>\n", resolveLink(link, baseURLs, selfHost), i)
 	}
 	for i, f := range p.Forms {
 		method := f.Method

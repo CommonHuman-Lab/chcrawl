@@ -45,8 +45,7 @@ type OpenAPIEvent struct {
 	Endpoints []openapi.Endpoint `json:"endpoints"`
 }
 
-// SummaryEvent is the final record emitted at the end of a crawl run,
-// satisfying every metric called for in the project brief.
+// SummaryEvent is the final record emitted at the end of a crawl run.
 type SummaryEvent struct {
 	Type                string        `json:"type"`
 	Seed                string        `json:"seed"`
@@ -69,14 +68,14 @@ type SummaryEvent struct {
 	RobotsDisallowed    int64         `json:"robots_disallowed"`
 	SourceMapsRecovered int64         `json:"source_maps_recovered"`
 	OpenAPIEndpoints    int64         `json:"openapi_endpoints_discovered"`
-	// ActiveWallMS is wall-clock Duration minus RetryBackoffMS (floored at 0,
-	// not CPU time); concurrent retries can overlap on the wall clock while
-	// RetryBackoffMS sums them independently, so it can exceed Duration.
-	RetryAttempts int64 `json:"retry_attempts"`
+	RetryAttempts       int64         `json:"retry_attempts"`
 	// RetryBackoff/ActiveWall are nanosecond precision; the MS fields are
 	// rounded convenience copies. Prefer the ns fields for statistics — ms
 	// rounding distorts sub-millisecond workloads.
-	RetryBackoff   time.Duration `json:"retry_backoff_ns"`
+	RetryBackoff time.Duration `json:"retry_backoff_ns"`
+	// ActiveWall is wall-clock Duration minus RetryBackoff (floored at 0, not
+	// CPU time); concurrent retries can overlap on the wall clock while
+	// RetryBackoff sums them independently, so it can exceed Duration.
 	ActiveWall     time.Duration `json:"active_wall_ns"`
 	RetryBackoffMS int64         `json:"retry_backoff_ms"`
 	ActiveWallMS   int64         `json:"active_wall_ms"`

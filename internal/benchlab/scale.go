@@ -8,11 +8,8 @@ import (
 )
 
 // ScaleWorkload is one concrete, parameterized instance of a large-scale
-// workload family: a Site built for a specific nominal Scale, plus the
-// RunOptions overrides that scale requires. Scale's meaning is family-specific:
-//   - S1/S3/S5/S6: target unique-URL count
-//   - S2: chain depth (also the unique-URL count, since it's linear)
-//   - S4: response body size in KB (link count is held fixed; see S4Sizes)
+// workload family. Scale's meaning is family-specific: unique-URL count for
+// most families, chain depth for S2, response body size in KB for S4.
 type ScaleWorkload struct {
 	Family string
 	Scale  int
@@ -20,8 +17,6 @@ type ScaleWorkload struct {
 	Opts   RunOptions
 }
 
-// ScaleLabel renders a scale as a short, sortable, human-readable suffix
-// ("100", "1k", "10k", "100k") for workload/report names.
 func ScaleLabel(n int) string {
 	switch {
 	case n >= 1_000_000 && n%1_000_000 == 0:
@@ -33,14 +28,11 @@ func ScaleLabel(n int) string {
 	}
 }
 
-// Default scale tiers per family, ordered ascending (also the run-count
-// tier order — smallest gets the most runs). A family's list may be trimmed
-// at benchmark time if a scale proves impractical; that's reported
-// explicitly, never silently dropped.
+// Default scale tiers per family, ascending (smallest tier gets the most runs).
 var (
 	S1Scales = []int{100, 1_000, 10_000, 100_000}
-	// S2 stops at 10,000: a 100,000-deep chain isn't a practical crawl depth,
-	// and being strictly sequential, its cost has no parallelism to amortize.
+	// S2 stops at 10,000: a 100k-deep chain isn't a practical crawl depth, and
+	// being strictly sequential, its cost has no parallelism to amortize.
 	S2Scales = []int{100, 1_000, 10_000}
 	// S3 scale is reference-link count; unique target count is derived (see
 	// s3UniqueCount), staying 1,000 for the larger tiers.
@@ -50,16 +42,13 @@ var (
 	S5Scales  = []int{100, 1_000, 10_000, 100_000}
 	S6Scales  = []int{1_000, 10_000}
 	// S1b: same total unique-URL scale as S1, but no single document holds
-	// more than ~1,000 links — see s1bWideDistributed.
+	// more than ~1,000 links.
 	S1bScales = []int{10_000, 100_000}
-	// S1c: the *achieved* node count of the largest full 10-ary tree not
-	// exceeding a ~10k/~100k target (see treeDepthForTarget), not round
-	// numbers since a full b-ary tree can't hit an arbitrary total exactly.
+	// S1c values are the achieved node counts of full 10-ary trees, not round
+	// numbers, since a full b-ary tree can't hit an arbitrary total exactly.
 	S1cScales = []int{11_111, 111_111}
 )
 
-// ScaleFamilies lists every large-scale family name in a fixed display
-// order, paired with its default scale list.
 func ScaleFamilies() []string {
 	return []string{
 		"S1-wide-flat", "S1b-wide-distributed", "S1c-balanced-tree",
@@ -68,8 +57,6 @@ func ScaleFamilies() []string {
 	}
 }
 
-// DefaultScales returns family's default scale list (or KB-size list for
-// S4), in ascending order.
 func DefaultScales(family string) []int {
 	switch family {
 	case "S1-wide-flat":
@@ -93,10 +80,10 @@ func DefaultScales(family string) []int {
 	}
 }
 
-// BuildScaleWorkload constructs the single Site+RunOptions for one
-// (family, scale) pair. Both the parent process and the re-exec'd
-// -internal-scale-worker subprocess call this exact function so they can
-// never disagree about what a (family, scale) actually is.
+// BuildScaleWorkload constructs the Site+RunOptions for one (family, scale)
+// pair. The parent process and the re-exec'd -internal-scale-worker
+// subprocess both call this so they can't disagree about what a
+// (family, scale) actually is.
 func BuildScaleWorkload(family string, scale int) (ScaleWorkload, error) {
 	switch family {
 	case "S1-wide-flat":
@@ -120,10 +107,9 @@ func BuildScaleWorkload(family string, scale int) (ScaleWorkload, error) {
 	}
 }
 
-// baseScaleOpts returns RunOptions with generous MaxPages/MaxFrontierSize
-// headroom — a frontier sized exactly to the discoverable count risks
-// measuring an artificial bottleneck instead of the engine — and a small
-// fixed MaxDepth (except S2, which needs depth to grow with scale).
+// baseScaleOpts gives generous MaxPages/MaxFrontierSize headroom: sizing the
+// frontier exactly to the discoverable count risks measuring an artificial
+// bottleneck instead of the engine.
 func baseScaleOpts(totalDiscoverable int) RunOptions {
 	headroom := totalDiscoverable*2 + 1000
 	return RunOptions{
@@ -133,10 +119,8 @@ func baseScaleOpts(totalDiscoverable int) RunOptions {
 	}
 }
 
-// --- S1: wide-flat ---------------------------------------------------
-
-// s1WideFlat: a single root page links to n unique leaf pages. Reuses
-// fanout(). Ground truth: n+1 unique pages (root + n leaves).
+// s1WideFlat: a single root page links to n unique leaf pages. Ground truth:
+// n+1 unique pages.
 func s1WideFlat(n int) ScaleWorkload {
 	site := &Site{
 		Name:  "s1-wide-flat-" + ScaleLabel(n),
@@ -146,10 +130,6 @@ func s1WideFlat(n int) ScaleWorkload {
 	return ScaleWorkload{Family: "S1-wide-flat", Scale: n, Site: site, Opts: baseScaleOpts(n)}
 }
 
-// --- S1b: wide-distributed (topology control for S1) --------------------
-
-// s1bHubCount is capped at 100 but never exceeds n, so small scales still
-// produce a sane structure.
 func s1bHubCount(n int) int {
 	const maxHubs = 100
 	if n < maxHubs {
@@ -161,12 +141,11 @@ func s1bHubCount(n int) int {
 	return maxHubs
 }
 
-// s1bWideDistributed exists to disambiguate whether S1's super-linear
-// 10k->100k transition comes from giant-document parsing, or from the
-// crawler's own frontier/scheduler scaling: same total URL scale and shallow
-// shape as S1, but no single document holds more than ~n/100 links (root ->
-// hubCount hubs -> n/hubCount leaves each). Ground truth: hubCount +
-// leafCount + 1 unique pages.
+// s1bWideDistributed disambiguates whether S1's super-linear 10k->100k
+// transition comes from giant-document parsing or from the crawler's own
+// frontier/scheduler scaling: same total URL scale and shallow shape as S1,
+// but no single document holds more than ~n/100 links. Ground truth:
+// hubCount + leafCount + 1 unique pages.
 func s1bWideDistributed(n int) ScaleWorkload {
 	hubCount := s1bHubCount(n)
 	leavesPerHub := n / hubCount
@@ -194,16 +173,12 @@ func s1bWideDistributed(n int) ScaleWorkload {
 	site := &Site{Name: "s1b-wide-distributed-" + ScaleLabel(n), Seed: "/", Pages: pages}
 	total := leafIdx + hubCount
 	opts := baseScaleOpts(total)
-	opts.MaxDepth = 6 // root -> hub -> leaf is depth 2; generous headroom
+	opts.MaxDepth = 6
 	return ScaleWorkload{Family: "S1b-wide-distributed", Scale: total, Site: site, Opts: opts}
 }
 
-// --- S1c: balanced-tree (topology control for S1) ------------------------
-
 // treeDepthForTarget returns the deepest full 10-ary tree (root at depth 0)
-// whose node count doesn't exceed target, plus that exact total. A full
-// b-ary tree can't hit an arbitrary target exactly, so s1cBalancedTree
-// reports the achieved total as its Scale rather than padding.
+// whose node count doesn't exceed target, plus that exact total.
 func treeDepthForTarget(target int) (depth, total int) {
 	const branch = 10
 	total = 1
@@ -221,9 +196,7 @@ func treeDepthForTarget(target int) (depth, total int) {
 
 // s1cBalancedTree is the second S1 topology control: same order-of-magnitude
 // URL count as S1/S1b, but a balanced branching tree (branch factor 10)
-// instead of a shallow hub fan-out. If S1b and S1c agree with each other but
-// disagree with S1, that points at document size rather than general
-// crawler scaling. Ground truth: exactly `total` unique pages.
+// instead of a shallow hub fan-out.
 func s1cBalancedTree(target int) ScaleWorkload {
 	depth, total := treeDepthForTarget(target)
 
@@ -254,14 +227,12 @@ func s1cBalancedTree(target int) ScaleWorkload {
 
 	site := &Site{Name: fmt.Sprintf("s1c-balanced-tree-%s", ScaleLabel(total)), Seed: "/", Pages: pages}
 	opts := baseScaleOpts(total)
-	opts.MaxDepth = depth + 5 // headroom so depth limits can't accidentally truncate discovery
+	opts.MaxDepth = depth + 5
 	return ScaleWorkload{Family: "S1c-balanced-tree", Scale: total, Site: site, Opts: opts}
 }
 
-// --- S2: deep-chain ----------------------------------------------------
-
 // s2DeepChain: a strictly linear chain /page/0 -> ... -> /page/{n-1}, root
-// pinned to "/". Reuses chain(). Ground truth: n unique pages.
+// pinned to "/". Ground truth: n unique pages.
 func s2DeepChain(n int) ScaleWorkload {
 	pages := chain("/page/", n)
 	pages[0].Path = "/"
@@ -271,10 +242,7 @@ func s2DeepChain(n int) ScaleWorkload {
 	return ScaleWorkload{Family: "S2-deep-chain", Scale: n, Site: site, Opts: opts}
 }
 
-// --- S3: high-duplication -----------------------------------------------
-
-// s3UniqueCount derives the unique-target count for a given reference
-// count: 1/10th of refCount, clamped to [100, 1000].
+// s3UniqueCount is 1/10th of refCount, clamped to [100, 1000].
 func s3UniqueCount(refCount int) int {
 	u := refCount / 10
 	if u < 100 {
@@ -291,10 +259,9 @@ func s3UniqueCount(refCount int) int {
 
 // s3HighDuplication: a root page with refCount link references, cycling
 // through s3UniqueCount(refCount) distinct target pages via three variant
-// forms (canonical path, trailing-slash, URL fragment) that chcrawl's
-// default StrictMode canonicalization already collapses to the same
-// frontier identity. Ground truth: uniqueCount+1 unique pages;
-// refCount-uniqueCount duplicates rejected.
+// forms (canonical path, trailing-slash, URL fragment) that chcrawl's default
+// StrictMode canonicalization collapses to the same frontier identity.
+// Ground truth: uniqueCount+1 unique pages.
 func s3HighDuplication(refCount int) ScaleWorkload {
 	unique := s3UniqueCount(refCount)
 	root := PageSpec{Path: "/"}
@@ -322,11 +289,10 @@ func s3HighDuplication(refCount int) ScaleWorkload {
 	return ScaleWorkload{Family: "S3-high-duplication", Scale: refCount, Site: site, Opts: baseScaleOpts(unique)}
 }
 
-// S3QueryCanonicalizationDemo is a small, fixed-size demonstration that
-// chcrawl's canonicalization can collapse query-parameter-order variants —
-// but only with SortQueryParams enabled, NOT chcrawl's production default.
-// Reported separately from the S3 scaling table. Ground truth: unique+1
-// pages, but ONLY under SortQueryParams=true.
+// S3QueryCanonicalizationDemo shows that chcrawl's canonicalization can
+// collapse query-parameter-order variants, but only with SortQueryParams
+// enabled — not chcrawl's production default. Reported separately from the
+// S3 scaling table.
 func S3QueryCanonicalizationDemo() ScaleWorkload {
 	const refCount = 2000
 	unique := 200
@@ -351,17 +317,14 @@ func S3QueryCanonicalizationDemo() ScaleWorkload {
 	return ScaleWorkload{Family: "S3b-query-canonicalization-demo", Scale: refCount, Site: site, Opts: opts}
 }
 
-// --- S4: large HTML ------------------------------------------------------
-
-// s4LinkCount is fixed across every S4 scale: S4's variable is response
-// body size (S1 already measures URL count), so a fixed link set isolates
+// s4LinkCount is fixed across every S4 scale: S4's variable is response body
+// size (S1 already measures URL count), so a fixed link set isolates
 // parsing/allocation/GC cost from frontier-size cost.
 const s4LinkCount = 200
 
-// s4LargeHTML: a root page with s4LinkCount real links (rendered first)
-// followed by sizeKB of filler bytes (as an HTML comment). Real links are
-// always emitted before filler, so link discovery survives MaxBodyBytes
-// truncation of the tail. Ground truth: s4LinkCount+1 unique pages.
+// s4LargeHTML: a root page with s4LinkCount real links, rendered before
+// sizeKB of filler bytes, so link discovery survives MaxBodyBytes truncation
+// of the tail. Ground truth: s4LinkCount+1 unique pages.
 func s4LargeHTML(sizeKB int) ScaleWorkload {
 	root := PageSpec{Path: "/", PaddingKB: sizeKB}
 	pages := make([]PageSpec, 0, s4LinkCount+1)
@@ -373,16 +336,15 @@ func s4LargeHTML(sizeKB int) ScaleWorkload {
 	pages = append(pages, root)
 	site := &Site{Name: fmt.Sprintf("s4-large-html-%dkb", sizeKB), Seed: "/", Pages: pages}
 	opts := baseScaleOpts(s4LinkCount)
-	// Generous MaxBodyBytes so the largest tier is measured at full size,
-	// not silently truncated by the production 10MiB cap; see S4DefaultBodyCapDemo.
+	// Generous MaxBodyBytes so the largest tier is measured at full size, not
+	// truncated by the production 10MiB cap; see S4DefaultBodyCapDemo.
 	opts.MaxBodyBytes = int64(sizeKB)*1024*2 + 1<<20
 	return ScaleWorkload{Family: "S4-large-html", Scale: sizeKB, Site: site, Opts: opts}
 }
 
 // S4DefaultBodyCapDemo builds the largest S4 body (25MB) but measures it at
 // chcrawl's production-default MaxBodyBytes (10MiB) to show the cap's real
-// effect. Since s4LargeHTML emits links before filler, truncation is
-// expected to cost zero discovered links.
+// effect.
 func S4DefaultBodyCapDemo() ScaleWorkload {
 	ws := s4LargeHTML(25600)
 	ws.Site.Name = "s4-large-html-25600kb-default-bodycap"
@@ -391,12 +353,10 @@ func S4DefaultBodyCapDemo() ScaleWorkload {
 	return ws
 }
 
-// --- S5: parameter-heavy -------------------------------------------------
-
 // s5ParameterHeavy: a root page linking to n distinct query-parameter
 // combinations against the same routed path, each with a unique id so every
 // reference is distinct under chcrawl's default (non-sorting)
-// canonicalization. Ground truth: n+1 unique pages; n*4 total params.
+// canonicalization. Ground truth: n+1 unique pages.
 func s5ParameterHeavy(n int) ScaleWorkload {
 	root := PageSpec{Path: "/"}
 	for i := 0; i < n; i++ {
@@ -406,13 +366,10 @@ func s5ParameterHeavy(n int) ScaleWorkload {
 	return ScaleWorkload{Family: "S5-parameter-heavy", Scale: n, Site: site, Opts: baseScaleOpts(n)}
 }
 
-// --- S6: mixed realistic site --------------------------------------------
-
-// s6MixedRealistic composes existing PageSpec primitives (see w4/w5/w7/w10)
-// at scale: shallow-wide branches, shared links, redirects, JS-endpoint
-// references, large responses, bad-content-type, 500s, and dead links.
-// Distribution is deterministic (index-modulo): ~1% of n is special-purpose
-// (split six ways below), the rest share two common links.
+// s6MixedRealistic composes existing PageSpec primitives at scale:
+// shallow-wide branches, shared links, redirects, JS-endpoint references,
+// large responses, bad-content-type, 500s, and dead links. ~1% of n is
+// special-purpose (split six ways below); the rest share two common links.
 func s6MixedRealistic(n int) ScaleWorkload {
 	special := n / 100
 	if special < 12 {
@@ -446,29 +403,29 @@ func s6MixedRealistic(n int) ScaleWorkload {
 
 	for i := 0; i < special; i++ {
 		switch i % 6 {
-		case 0: // server error
+		case 0:
 			p := "/err/" + strconv.Itoa(i)
 			root.Links = append(root.Links, p)
 			pages = append(pages, PageSpec{Path: p, Status: 500})
-		case 1: // redirect
+		case 1:
 			p := "/redirect/" + strconv.Itoa(i)
 			target := "/redirect/target/" + strconv.Itoa(i)
 			root.Links = append(root.Links, p)
 			pages = append(pages, PageSpec{Path: p, Redirect: target})
 			pages = append(pages, PageSpec{Path: target})
-		case 2: // JS endpoint reference
+		case 2:
 			p := "/app" + strconv.Itoa(i) + ".js"
 			root.Links = append(root.Links, p)
 			pages = append(pages, PageSpec{Path: p, JSEndpoints: []JSEndpoint{{Method: "GET", Path: "/api/resource/" + strconv.Itoa(i)}}})
-		case 3: // large response
+		case 3:
 			p := "/large/" + strconv.Itoa(i)
 			root.Links = append(root.Links, p)
 			pages = append(pages, PageSpec{Path: p, PaddingKB: 256})
-		case 4: // bad content type
+		case 4:
 			p := "/badtype/" + strconv.Itoa(i)
 			root.Links = append(root.Links, p)
 			pages = append(pages, PageSpec{Path: p, BadContentType: true})
-		case 5: // dead link (no PageSpec registered -> 404)
+		case 5: // dead link: no PageSpec registered -> 404
 			root.Links = append(root.Links, "/notfound-link/"+strconv.Itoa(i))
 		}
 	}

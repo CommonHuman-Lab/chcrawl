@@ -36,6 +36,11 @@ type MetricStats struct {
 	P95    time.Duration `json:"p95_ns"`
 	P99    time.Duration `json:"p99_ns"`
 	StdDev time.Duration `json:"stddev_ns"`
+	// MAD is the median absolute deviation from the median: a dispersion
+	// measure robust to the single-outlier spikes stddev is sensitive to
+	// (a single slow run inflates stddev a lot, MAD much less) — the more
+	// trustworthy of the two at small sample counts.
+	MAD time.Duration `json:"mad_ns"`
 }
 
 // percentile returns the p-th percentile (0 < p <= 100) of sorted (must
@@ -85,17 +90,39 @@ func computeMetricStats(samples []time.Duration) MetricStats {
 		sum += s
 	}
 	mean := sum / time.Duration(len(sorted))
+	median := percentile(sorted, 50)
 
 	return MetricStats{
 		Min:    sorted[0],
 		Max:    sorted[len(sorted)-1],
-		Median: percentile(sorted, 50),
+		Median: median,
 		Mean:   mean,
 		P90:    percentile(sorted, 90),
 		P95:    percentile(sorted, 95),
 		P99:    percentile(sorted, 99),
 		StdDev: sampleStdDev(sorted, mean),
+		MAD:    medianAbsoluteDeviation(sorted, median),
 	}
+}
+
+// medianAbsoluteDeviation is the median of |x_i - median(x)|, computed
+// directly from the unsorted-relative-to-median absolute deviations
+// (sorting sorted itself doesn't help here — the deviations need their own
+// sort).
+func medianAbsoluteDeviation(sorted []time.Duration, median time.Duration) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	devs := make([]time.Duration, len(sorted))
+	for i, s := range sorted {
+		d := s - median
+		if d < 0 {
+			d = -d
+		}
+		devs[i] = d
+	}
+	sort.Slice(devs, func(i, j int) bool { return devs[i] < devs[j] })
+	return percentile(devs, 50)
 }
 
 func medianUint64(vals []uint64) uint64 {

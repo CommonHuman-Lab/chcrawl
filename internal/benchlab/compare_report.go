@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -22,23 +23,33 @@ func WriteCompareReport(w io.Writer, byWorkload map[string]map[string]*CompareRe
 	for _, name := range workloads {
 		results := byWorkload[name]
 		fmt.Fprintf(w, "## %s\n\n", name)
-		fmt.Fprintf(w, "| tool | found / total | recall | extra | duration |\n")
-		fmt.Fprintf(w, "|---|---|---|---|---|\n")
+		fmt.Fprintf(w, "| tool | found / total | recall | extra | malformed | duration |\n")
+		fmt.Fprintf(w, "|---|---|---|---|---|---|\n")
+		var details []string
 		for _, toolName := range toolOrder {
 			r, ok := results[toolName]
 			if !ok {
 				continue
 			}
 			if !r.Available {
-				fmt.Fprintf(w, "| %s | — | — | — | not installed |\n", toolName)
+				fmt.Fprintf(w, "| %s | — | — | — | — | not installed |\n", toolName)
 				continue
 			}
 			errNote := ""
 			if r.Err != nil {
 				errNote = " (nonzero exit)"
 			}
-			fmt.Fprintf(w, "| %s | %d / %d | %.0f%% | %d | %s%s |\n",
-				toolName, r.Found, r.Total, r.Recall(), r.Extra, r.Duration.Round(time.Millisecond), errNote)
+			fmt.Fprintf(w, "| %s | %d / %d | %.0f%% | %d | %d | %s%s |\n",
+				toolName, r.Found, r.Total, r.Recall(), r.Extra, r.Malformed, r.Duration.Round(time.Millisecond), errNote)
+			if len(r.MissingPaths) > 0 {
+				details = append(details, fmt.Sprintf("- **%s** missing: %s", toolName, strings.Join(r.MissingPaths, ", ")))
+			}
+			if len(r.ExtraPaths) > 0 {
+				details = append(details, fmt.Sprintf("- **%s** extra: %s", toolName, strings.Join(r.ExtraPaths, ", ")))
+			}
+		}
+		if len(details) > 0 {
+			fmt.Fprintf(w, "\n%s\n", strings.Join(details, "\n"))
 		}
 		fmt.Fprintf(w, "\n")
 	}

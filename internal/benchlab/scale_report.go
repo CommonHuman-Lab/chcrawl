@@ -220,7 +220,6 @@ func writeScaleFamilySummary(w io.Writer, fam ScaleFamilyResult) {
 	fmt.Fprintf(w, "| from -> to | scale x | runtime x (median) | classification | peak RSS x (median) | ΔRSS / 1,000 units |\n")
 	fmt.Fprintf(w, "|---|---:|---:|---|---:|---:|\n")
 	for _, r := range ratios {
-		// find matching points for the RSS delta helper
 		var a, b ScalePoint
 		found := 0
 		for j := range fam.Points {

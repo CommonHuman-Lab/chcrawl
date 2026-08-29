@@ -38,6 +38,8 @@ func (w *Writer) WriteOpenAPI(e OpenAPIEvent) error {
 	return w.write(e)
 }
 
+// write marshals v before taking the lock, so JSON encoding never happens
+// inside the critical section.
 func (w *Writer) write(v interface{}) error {
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(v); err != nil {

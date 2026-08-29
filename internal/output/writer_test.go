@@ -54,12 +54,9 @@ func TestWriter_WriteError_SetsTypeField(t *testing.T) {
 }
 
 // TestWriter_ConcurrentWrites_NeverTearLines guards the invariant write()
-// depends on now that JSON marshaling happens before the lock is taken
-// (moved out of the critical section to cut mutex contention — see write's
-// doc comment): every line written to the underlying io.Writer must still
-// be a single, complete, validly-formed JSON object. If the lock were ever
-// held over anything less than the whole marshaled-record-plus-newline
-// byte slice, concurrent writers could interleave partial lines.
+// depends on: every line written to the underlying io.Writer must still be
+// a single, complete, validly-formed JSON object, even though JSON marshaling
+// happens outside the lock (see write's doc comment).
 func TestWriter_ConcurrentWrites_NeverTearLines(t *testing.T) {
 	var buf bytes.Buffer
 	w := NewWriter(&buf)

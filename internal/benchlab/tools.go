@@ -88,13 +88,27 @@ func parseChcrawl(seedURL string, stdout []byte) map[string]bool {
 	return found
 }
 
-// parseChcrawlSummary extracts the "summary" record from a chcrawl run's
-// JSONL stdout. ok is false if none is found, which is always true for the
-// other tools (none emit chcrawl's JSONL schema) — lets callers check for
-// equivalent instrumentation without tool-specific branching.
-func parseChcrawlSummary(stdout []byte) (activeWall, retryBackoff time.Duration, retryAttempts, requestsMade int64, ok bool) {
+// chcrawlSummary is every per-run metric parseChcrawlSummary can recover
+// from a chcrawl run's JSONL stdout — only chcrawl emits this schema, so
+// these fields are never available for the other tools (see
+// CompetitorSample's doc comment).
+type chcrawlSummary struct {
+	ActiveWall    time.Duration
+	RetryBackoff  time.Duration
+	RetryAttempts int64
+	RequestsMade  int64
+	ResponsesOK   int64
+	BytesReceived int64
+}
+
+// parseChcrawlSummary extracts the "summary" record plus a sum of every
+// "page" record's bytes_read from a chcrawl run's JSONL stdout. ok is false
+// if no summary record is found, which is always true for other tools —
+// lets callers check for equivalent instrumentation without tool-specific branching.
+func parseChcrawlSummary(stdout []byte) (s chcrawlSummary, ok bool) {
 	scanner := bufio.NewScanner(bytes.NewReader(stdout))
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	var bytesReceived int64
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -106,15 +120,28 @@ func parseChcrawlSummary(stdout []byte) (activeWall, retryBackoff time.Duration,
 			RetryBackoff  int64  `json:"retry_backoff_ns"`
 			RetryAttempts int64  `json:"retry_attempts"`
 			RequestsMade  int64  `json:"requests_made"`
+			ResponsesOK   int64  `json:"responses_ok"`
+			BytesRead     int64  `json:"bytes_read"`
 		}
 		if err := json.Unmarshal(line, &rec); err != nil {
 			continue
 		}
-		if rec.Type == "summary" {
-			return time.Duration(rec.ActiveWallNS), time.Duration(rec.RetryBackoff), rec.RetryAttempts, rec.RequestsMade, true
+		switch rec.Type {
+		case "page":
+			bytesReceived += rec.BytesRead
+		case "summary":
+			s = chcrawlSummary{
+				ActiveWall:    time.Duration(rec.ActiveWallNS),
+				RetryBackoff:  time.Duration(rec.RetryBackoff),
+				RetryAttempts: rec.RetryAttempts,
+				RequestsMade:  rec.RequestsMade,
+				ResponsesOK:   rec.ResponsesOK,
+			}
+			ok = true
 		}
 	}
-	return 0, 0, 0, 0, false
+	s.BytesReceived = bytesReceived
+	return s, ok
 }
 
 func katanaTool() Tool {

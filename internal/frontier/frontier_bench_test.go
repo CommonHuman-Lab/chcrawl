@@ -9,46 +9,21 @@ import (
 )
 
 // Isolated many-goroutine contention benchmarks for the frontier's shared
-// channel, reproducing two real crawl shapes from the topology-controlled
-// scaling investigation (see internal/benchlab/scale.go's S1-wide-flat vs
-// S1c-balanced-tree, and cmd/chcrawl-bench's delivered scale-bench report):
-//
-//   - "burst": one goroutine pushes N items back-to-back with no work
-//     between pushes, while several goroutines are already parked in Pop,
-//     waiting — the S1-wide-flat shape (one page holding N links).
-//   - "staggered": the same N items pushed by N/itemsPerProducer producer
-//     goroutines (itemsPerProducer=10, matching S1c-balanced-tree's real
-//     branch factor), each pushing only its own 10 items before exiting —
-//     the S1c shape (many pages, 10 links each, no single goroutine ever
-//     pushing more than 10 in a row).
-//
-// These are NOT full-crawl wall-clock benchmarks (already known to be
-// noisy on a shared/desktop machine — see the delivered scale-bench
-// report's reproducibility section) and are NOT the existing
-// single-goroutine diagnostic benchmarks in
-// internal/benchlab/diagnostic_bench_test.go, whose frontier benchmark is
-// deliberately sequential (one goroutine push-then-pop) and explicitly
-// cannot reproduce many-goroutine contention. Run with:
+// channel, reproducing two real crawl shapes (see internal/benchlab/scale.go):
+// "burst" pushes N items back-to-back with no gaps (the S1-wide-flat shape,
+// one page holding N links); "staggered" spreads the same N items across
+// many short-lived producers of itemsPerStaggeredProducer each (the
+// S1c-balanced-tree shape). Unlike the sequential push-then-pop benchmark in
+// diagnostic_bench_test.go, these reproduce actual many-goroutine contention.
 //
 //	go test ./internal/frontier -bench BenchmarkFrontier -benchtime=5x -run '^$'
-//
-// To reconfirm the block-profile shape in isolation (the burst variant
-// should be selectgo-dominated; the staggered variant should not):
-//
-//	go test ./internal/frontier -bench BenchmarkFrontierBurstContention100k -benchtime=3x -run '^$' -blockprofile=burst_block.out
-//	go tool pprof -top burst_block.out
-//	go test ./internal/frontier -bench BenchmarkFrontierStaggeredContention100k -benchtime=3x -run '^$' -blockprofile=staggered_block.out
-//	go tool pprof -top staggered_block.out
 
-// popperCounts are the worker-pool sizes exercised as a sub-benchmark
-// dimension: 10 matches config.defaults().Concurrency (the production
-// default); 32 is a higher count to see how the pattern scales with more
-// workers than the bug report itself isolated.
+// popperCounts: 10 matches config.defaults().Concurrency (the production
+// default); 32 checks a higher worker count.
 var popperCounts = []int{10, 32}
 
-// itemsPerStaggeredProducer matches S1c-balanced-tree's actual branch
-// factor (see internal/benchlab/scale.go's s1cBalancedTree) — not a tuned
-// constant, the same structural value the real topology comparison used.
+// itemsPerStaggeredProducer matches S1c-balanced-tree's branch factor (see
+// internal/benchlab/scale.go's s1cBalancedTree).
 const itemsPerStaggeredProducer = 10
 
 func BenchmarkFrontierBurstContention10k(b *testing.B) {
@@ -83,13 +58,10 @@ func BenchmarkFrontierStaggeredContention100k(b *testing.B) {
 	}
 }
 
-// runBurstContention starts `poppers` goroutines looping Pop, waits until
-// every one of them has actually entered the loop (so they're genuinely
-// parked in Pop's select when the burst starts, not merely scheduled),
-// then does n sequential Push calls on the benchmark goroutine itself with
-// no work between them — the exact shape one worker holding a host-limiter
-// slot through a page's whole discovery loop produces in the real engine
-// (see internal/engine/pipeline.go's maybeEnqueueChild/enqueue).
+// runBurstContention starts `poppers` goroutines parked in Pop, then does n
+// sequential Push calls with no gaps — the shape one worker holding a
+// host-limiter slot through a page's whole discovery loop produces in the
+// real engine (see pipeline.go's maybeEnqueueChild/enqueue).
 func runBurstContention(b *testing.B, n, poppers int) {
 	ctx := context.Background()
 	b.ReportAllocs()
@@ -139,25 +111,11 @@ func runBurstContention(b *testing.B, n, poppers int) {
 
 // runStaggeredContention pushes the same total n items as runBurstContention,
 // but spread across n/itemsPerStaggeredProducer independent producer
-// goroutines, each pushing only itemsPerStaggeredProducer items before
-// exiting — matching the real structural difference between S1-wide-flat
-// and S1c-balanced-tree: in the real engine, one worker goroutine holding
-// its host-limiter slot pushes *all* of one page's discoveries in a tight
-// loop before releasing it (see maybeEnqueueChild/enqueue in
-// internal/engine/pipeline.go); S1c's pages only ever discover 10 links
-// each, so no single goroutine ever pushes more than 10 in a row, and each
-// page requires a fresh worker to actually fetch+parse it first — modeled
-// here by using many short-lived producer goroutines rather than one
-// goroutine looping n times. (An earlier version of this benchmark added
-// runtime.Gosched() between every individual push to simulate a "gap" —
-// that was wrong: it doesn't model inter-*page* fetch latency, it just
-// adds scheduling churn between individual links on what the real engine
-// still processes as one uninterrupted burst, and measurably made the
-// block profile worse, not better. The goroutine-count structure alone is
-// the real variable.) This is the in-repo control: it should scale closer
-// to linearly with n and show a different contention profile than the
-// burst variant, proving this harness isolates the topology effect the
-// real S1-vs-S1c comparison found, not just raw item count.
+// goroutines, each pushing only itemsPerStaggeredProducer items — matching
+// S1c-balanced-tree, where each page only ever discovers 10 links and a
+// fresh worker is required to fetch+parse each one. This is the in-repo
+// control: it should scale closer to linearly with n and show a different
+// contention profile than the burst variant.
 func runStaggeredContention(b *testing.B, n, poppers int) {
 	ctx := context.Background()
 	producers := n / itemsPerStaggeredProducer

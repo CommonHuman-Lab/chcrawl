@@ -1,7 +1,6 @@
-// Command chcrawl-bench runs the local deterministic benchmark workloads
-// in internal/benchlab and reports timing, throughput, memory, and
-// discovery-correctness for each. Everything it touches is bound to
-// 127.0.0.1 — no Docker, no external network, no public websites.
+// Command chcrawl-bench runs the local deterministic benchmark workloads in
+// internal/benchlab. Everything it touches is bound to 127.0.0.1 — no
+// Docker, no external network, no public websites.
 package main
 
 import (
@@ -153,8 +152,8 @@ func runStats(workload, reportPath string, runs, warmups int, basis benchlab.Met
 	return nil
 }
 
-// spawnWorker re-execs this binary with -internal-worker set to exactly one
-// workload, isolating that workload's peak-RSS measurement in its own process.
+// spawnWorker re-execs this binary with -internal-worker set to isolate that
+// workload's peak-RSS measurement in its own process.
 func spawnWorker(workload string, runs, warmups int, disableRetry bool) (*benchlab.WorkloadStats, error) {
 	args := []string{
 		"-internal-worker", workload,
@@ -200,7 +199,7 @@ func runInternalWorker(workload string, runs, warmups int, disableRetry bool) er
 }
 
 // runInternalScaleWorker is the subprocess entry point for the large-scale
-// suite, spawned by spawnScaleWorker. Same peak-RSS isolation as runInternalWorker.
+// suite, spawned by spawnScaleWorker.
 func runInternalScaleWorker(family string, scale, runs, warmups, concurrency int) error {
 	var w benchlab.ScaleWorkload
 	switch family {
@@ -243,8 +242,7 @@ func runInternalScaleWorker(family string, scale, runs, warmups, concurrency int
 }
 
 // spawnScaleWorker re-execs this binary with -internal-scale-worker set to
-// measure exactly one (family, scale), with timeout as a hard ceiling on top
-// of the subprocess's own internal budget.
+// measure exactly one (family, scale), with timeout as a hard ceiling.
 func spawnScaleWorker(family string, scale, runs, warmups, concurrency int, timeout time.Duration) (*benchlab.WorkloadStats, time.Duration, error) {
 	args := []string{
 		"-internal-scale-worker", family,
@@ -279,11 +277,10 @@ const (
 	scaleTierTimeout  = 20 * time.Minute
 )
 
-// scaleConcurrencyLevels is the fixed sweep used by -scale-concurrency-sweep.
 var scaleConcurrencyLevels = []int{1, 4, 10, 25, 50, 100}
 
-// scaleProfilingNotes holds hand-written pprof findings for the workloads
-// whose scaling showed a discontinuity worth explaining.
+// scaleProfilingNotes holds hand-written pprof findings for workloads whose
+// scaling showed a discontinuity worth explaining.
 var scaleProfilingNotes = map[string]string{
 	"S1-wide-flat": "" +
 		"S1's 10k->100k transition shows the sharpest super-linear jump of any\n" +
@@ -339,10 +336,8 @@ var scaleProfilingNotes = map[string]string{
 }
 
 // scaleTopologyConclusion is the hand-authored judgment call the
-// topology-controlled comparison exists to produce, written after and
-// citing the actual measured S1/S1b/S1c numbers; not derivable mechanically
-// from the tables alone. The full reproducibility story (an outlier run
-// traced to the host's powersave cpufreq governor) is in the text itself.
+// topology-controlled comparison exists to produce, citing the actual
+// measured S1/S1b/S1c numbers; not derivable mechanically from the tables alone.
 const scaleTopologyConclusion = "" +
 	"**Outcome: B — crawler frontier/scheduler behavior under bursty wide " +
 	"discovery dominates the super-linear scaling shape, not giant-document " +
@@ -459,10 +454,9 @@ func runScaleRenderFrom(jsonPath, reportPath string) error {
 	return nil
 }
 
-// runScaleBench probes each scale (1 iteration, 0 warmups) against the
-// wall-clock/RSS practicality ceilings before committing to the full
-// tier-appropriate measurement; exceeding a ceiling excludes that scale and
-// every larger one in the family.
+// runScaleBench probes each scale against the wall-clock/RSS practicality
+// ceilings before committing to the full measurement; exceeding a ceiling
+// excludes that scale and every larger one in the family.
 func runScaleBench(familyFilter, reportPath string, includeConcurrencySweep, jsonOut bool) error {
 	env := benchlab.CaptureEnvironment()
 
@@ -615,10 +609,8 @@ func fmtBytesLocal(b uint64) string {
 	return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
 }
 
-// runOracle is the original single-run report: kept byte-for-byte as it
-// was before repeated-run statistics existed, reachable via -runs 1, so
-// existing scripts/CI pinned to that exact output aren't broken by the new
-// default.
+// runOracle is the original single-run report, kept byte-for-byte reachable
+// via -runs 1 so existing scripts/CI pinned to that output aren't broken.
 func runOracle(workload, reportPath string, disableRetry bool) error {
 	all := benchlab.Workloads()
 	selected := map[string]*benchlab.Site{}
@@ -676,8 +668,7 @@ func runOracle(workload, reportPath string, disableRetry bool) error {
 
 // runCompetitorBench runs the statistically-hardened comparison: chcrawl (as
 // an external subprocess, like the others) plus whichever tools
-// benchlab.ExternalTools() has active, warmups+runs times each, against
-// every comparison-eligible workload.
+// benchlab.ExternalTools() has active, against every comparison-eligible workload.
 func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut bool) error {
 	binPath, cleanup, err := buildChcrawlBinary()
 	if err != nil {
@@ -710,13 +701,20 @@ func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut 
 
 	tools := append([]benchlab.Tool{benchlab.ChcrawlTool(binPath)}, benchlab.ExternalTools()...)
 
+	// Each workload gets its own seed, derived from the wall-clock start
+	// time — logged in full (see runLogs below) so any specific workload's
+	// exact tool order can be reproduced later even though the seed itself
+	// isn't fixed run to run.
 	results := map[string]map[string]*benchlab.CompetitorStats{}
+	runLogs := map[string]*benchlab.InterleavedRunLog{}
 	for _, name := range sortedKeys(selected) {
-		results[name] = map[string]*benchlab.CompetitorStats{}
+		ctx := context.Background()
+		seed := time.Now().UnixNano()
+		stats, log := benchlab.RunCompetitorInterleaved(ctx, selected[name], compareMaxDepth, warmups, runs, tools, seed)
+		results[name] = stats
+		runLogs[name] = log
 		for _, t := range tools {
-			ctx := context.Background()
-			cs := benchlab.RunCompetitorMany(ctx, selected[name], compareMaxDepth, warmups, runs, t)
-			results[name][t.Name] = cs
+			cs := stats[t.Name]
 			if !cs.Available {
 				fmt.Fprintf(os.Stderr, "%-24s %-10s NOT INSTALLED\n", name, t.Name)
 				continue
@@ -743,6 +741,7 @@ func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut 
 		MaxDepth:    compareMaxDepth,
 		GeneratedAt: time.Now(),
 		Environment: env,
+		RunLogs:     runLogs,
 	}
 	if jsonOut {
 		return benchlab.WriteCompetitorJSON(out, meta, results)
@@ -757,9 +756,8 @@ func runCompetitorBench(workload, reportPath string, runs, warmups int, jsonOut 
 const compareMaxDepth = 40
 
 // runCompare builds a throwaway chcrawl binary and scores it against
-// whichever tools benchlab.ExternalTools() has active (and are installed)
-// on every comparison-eligible workload, excluding the multi-host one whose
-// scope semantics aren't comparable across tools.
+// whichever tools benchlab.ExternalTools() has active on every
+// comparison-eligible workload.
 func runCompare(workload, reportPath string) error {
 	binPath, cleanup, err := buildChcrawlBinary()
 	if err != nil {

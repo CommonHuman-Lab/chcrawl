@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-// hostlimiter.go has no other test coverage prior to this file.
-
 func TestHostLimiter_NeverExceedsCapacity(t *testing.T) {
 	const perHost = 4
 	const workers = 50

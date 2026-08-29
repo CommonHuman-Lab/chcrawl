@@ -41,14 +41,14 @@ func pathOnly(p string) string {
 	return p
 }
 
-// resolveRedirects follows p.Redirect chains (within one host) up to
-// maxRedirectHops, returning ok=false on a loop or unresolvable target —
-// mirrors the engine's too-many-redirects error.
 func lookup(pages map[key]PageSpec, k key) (PageSpec, bool) {
 	p, ok := pages[key{host: k.host, path: pathOnly(k.path)}]
 	return p, ok
 }
 
+// resolveRedirects follows p.Redirect chains (within one host) up to
+// maxRedirectHops, returning ok=false on a loop or unresolvable target —
+// mirrors the engine's too-many-redirects error.
 func resolveRedirects(pages map[key]PageSpec, start key) (final PageSpec, hops int, ok bool) {
 	seen := map[key]bool{}
 	cur := start
@@ -154,6 +154,7 @@ func (s *Site) Compute(maxDepth int, sameOrigin bool, canon config.Canonicalizat
 		var children []string
 		children = append(children, final.Links...)
 		children = append(children, final.ScriptSrcs...)
+		children = append(children, final.DataLinks...)
 		for _, f := range final.Forms {
 			children = append(children, f.Action)
 		}

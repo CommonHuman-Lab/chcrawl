@@ -7,20 +7,16 @@ import (
 )
 
 // BenchmarkHostLimiterContention isolates the per-host semaphore's real
-// contention pattern: Concurrency-many (config.defaults().Concurrency,
-// see internal/config/config.go) goroutines doing repeated Acquire→(trivial
-// work)→Release cycles against one hostLimiter for one host at
-// PerHostConcurrency (also config.defaults()) capacity — the "6 of 10
-// workers parked in Acquire's select for the whole crawl" structural
-// contention identified for single-host workloads, distinct from and
-// present independent of the frontier's burst-vs-staggered discovery
-// pattern (see internal/frontier/frontier_bench_test.go). Run with:
+// contention pattern: Concurrency-many goroutines doing repeated
+// Acquire→(trivial work)→Release cycles against one hostLimiter for one
+// host at PerHostConcurrency capacity, distinct from and independent of the
+// frontier's burst-vs-staggered discovery pattern (see
+// internal/frontier/frontier_bench_test.go). Run with:
 //
 //	go test ./internal/engine -bench BenchmarkHostLimiterContention -benchtime=20x -run '^$'
 //	go test ./internal/engine -bench BenchmarkHostLimiterContention -benchtime=20x -run '^$' -blockprofile=hostlimiter_block.out
 func BenchmarkHostLimiterContention(b *testing.B) {
-	// concurrency/perHost match config.defaults() exactly (10, 4) — not
-	// tuned for this benchmark, the actual production defaults.
+	// concurrency/perHost match config.defaults() (10, 4).
 	const concurrency = 10
 	const perHost = 4
 	const cyclesPerWorker = 500

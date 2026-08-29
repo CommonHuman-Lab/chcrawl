@@ -17,6 +17,10 @@ type CompetitorReportMeta struct {
 	MaxDepth    int         `json:"max_depth"`
 	GeneratedAt time.Time   `json:"generated_at"`
 	Environment Environment `json:"environment"`
+	// RunLogs is the exact randomized tool-invocation order per workload,
+	// keyed by workload name — see RunCompetitorInterleaved. Nil/empty for
+	// a report built without it (e.g. an older JSON file re-rendered).
+	RunLogs map[string]*InterleavedRunLog `json:"run_logs,omitempty"`
 }
 
 func competitorToolOrder() []string {
@@ -62,6 +66,7 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	order := competitorToolOrder()
 	fmt.Fprintf(w, "# %s\n\n", strings.Join(order, " vs. "))
 	writeCompetitorEnvironment(w, meta)
+	writeAggregateSummary(w, workloads, results)
 
 	fmt.Fprintf(w, "## Methodology\n\n")
 	fmt.Fprintf(w, "Every tool crawls the identical local (127.0.0.1-only) synthetic target\n")
@@ -71,11 +76,23 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "chcrawl's own oracle-diff correctness suite. %d warmup iterations are run\n", meta.Warmups)
 	fmt.Fprintf(w, "and discarded (including from correctness accounting) before %d measured\n", meta.Runs)
 	fmt.Fprintf(w, "iterations per tool per workload; every measured iteration starts fresh\n")
-	fmt.Fprintf(w, "local HTTP servers. Percentiles use the nearest-rank method (`ceil(p/100 *\n")
-	fmt.Fprintf(w, "n)`, 1-indexed) computed from individual per-run samples, identical to the\n")
-	fmt.Fprintf(w, "methodology in chcrawl's own multi-run benchmark; with %d runs, P99's\n", meta.Runs)
-	fmt.Fprintf(w, "nearest rank is the sample count itself, i.e. P99 == Max. Standard\n")
-	fmt.Fprintf(w, "deviation is sample stddev (n-1 denominator). Peak RSS is the kernel's\n")
+	fmt.Fprintf(w, "local HTTP servers. Tool order is re-randomized independently on every\n")
+	fmt.Fprintf(w, "single repetition (warmup or measured) rather than running one tool's full\n")
+	fmt.Fprintf(w, "warmups+runs before starting the next — a blocked order would let\n")
+	fmt.Fprintf(w, "environmental drift over a long run (thermal throttling, background load\n")
+	fmt.Fprintf(w, "building up) bias whichever tool happens to run last, confounding drift\n")
+	fmt.Fprintf(w, "with tool identity; see Reproducibility below for the exact seed and\n")
+	fmt.Fprintf(w, "per-repetition order used. Percentiles use the nearest-rank method\n")
+	fmt.Fprintf(w, "(`ceil(p/100 * n)`, 1-indexed) computed from individual per-run samples,\n")
+	fmt.Fprintf(w, "identical to the methodology in chcrawl's own multi-run benchmark; with\n")
+	fmt.Fprintf(w, "%d runs, P99's nearest rank is the sample count itself, i.e. P99 == Max —\n", meta.Runs)
+	fmt.Fprintf(w, "reported anyway since it's requested, but treat it as barely more\n")
+	fmt.Fprintf(w, "informative than Max at this sample size. MAD (median absolute deviation\n")
+	fmt.Fprintf(w, "from the median) is reported alongside stddev as a dispersion measure\n")
+	fmt.Fprintf(w, "less sensitive to a single slow-run spike; %d samples is not enough to\n", meta.Runs)
+	fmt.Fprintf(w, "assert statistical significance from stddev/MAD alone — a difference\n")
+	fmt.Fprintf(w, "smaller than or comparable to either is called out as inconclusive in\n")
+	fmt.Fprintf(w, "prose, not asserted as a real effect. Peak RSS is the kernel's\n")
 	fmt.Fprintf(w, "getrusage(RUSAGE_CHILDREN) Maxrss for that exact subprocess invocation\n")
 	fmt.Fprintf(w, "(Linux) — genuinely isolated per invocation, with no cross-run or\n")
 	fmt.Fprintf(w, "cross-tool contamination risk, since every invocation is already its own\n")
@@ -84,6 +101,7 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "matching, subdomain flags, no built-in concept at all) that scoring it\n")
 	fmt.Fprintf(w, "wouldn't be a fair comparison.\n\n")
 	writeCompetitorConfiguration(w, meta)
+	writeReproducibility(w, meta)
 
 	fmt.Fprintf(w, "## View 1: production wall-clock\n\n")
 	fmt.Fprintf(w, "The real end-to-end experience: process startup, HTTP work, parsing,\n")
@@ -142,6 +160,62 @@ func writeCompetitorEnvironment(w io.Writer, meta CompetitorReportMeta) {
 	fmt.Fprintf(w, "```\n\n")
 }
 
+// writeAggregateSummary rolls the per-workload results up into one glance
+// row per tool. Deliberately NOT a weighted composite score — each figure
+// stays in its own dimension so a reader can see, say, "fast but
+// incomplete" instead of that tradeoff being averaged away. Runtime/RSS
+// aggregates use median-of-medians for the same robustness-to-outliers
+// reasoning as MAD (see Methodology).
+func writeAggregateSummary(w io.Writer, workloads []string, results map[string]map[string]*CompetitorStats) {
+	fmt.Fprintf(w, "## At a glance\n\n")
+	fmt.Fprintf(w, "Roll-up across all %d workloads. Not a score — see View 1/2/3 below for\n", len(workloads))
+	fmt.Fprintf(w, "the real, un-collapsed per-workload numbers before drawing a conclusion\n")
+	fmt.Fprintf(w, "from any single row here.\n\n")
+	fmt.Fprintf(w, "| tool | 100%%-recall workloads | oracle URLs covered | URLs never found | median runtime (of per-workload medians) | peak RSS range |\n")
+	fmt.Fprintf(w, "|---|---:|---:|---:|---:|---:|\n")
+
+	for _, tool := range competitorToolOrder() {
+		var perfectWorkloads, testedWorkloads, coveredTotal, oracleTotal, missingTotal int
+		var medians []time.Duration
+		var rssVals []uint64
+		for _, wl := range workloads {
+			cs := results[wl][tool]
+			if cs == nil || !cs.Available {
+				continue
+			}
+			testedWorkloads++
+			if cs.Status == "PASS" {
+				perfectWorkloads++
+			}
+			coveredTotal += cs.MinFound
+			oracleTotal += cs.GroundTruthTotal
+			missingTotal += cs.GroundTruthTotal - cs.MinFound
+			medians = append(medians, cs.Duration.Median)
+			if cs.RSSAvailable {
+				rssVals = append(rssVals, cs.MedianPeakRSSBytes)
+			}
+		}
+		if testedWorkloads == 0 {
+			fmt.Fprintf(w, "| %s | — | — | — | — | NOT INSTALLED |\n", tool)
+			continue
+		}
+		rssRange := "N/A"
+		if len(rssVals) > 0 {
+			sort.Slice(rssVals, func(i, j int) bool { return rssVals[i] < rssVals[j] })
+			rssRange = fmt.Sprintf("%s – %s", fmtBytes(rssVals[0]), fmtBytes(rssVals[len(rssVals)-1]))
+		}
+		sort.Slice(medians, func(i, j int) bool { return medians[i] < medians[j] })
+		medianOfMedians := time.Duration(0)
+		if len(medians) > 0 {
+			medianOfMedians = medians[len(medians)/2]
+		}
+		fmt.Fprintf(w, "| %s | %d/%d | %d/%d | %d | %s | %s |\n",
+			tool, perfectWorkloads, testedWorkloads, coveredTotal, oracleTotal, missingTotal,
+			fmtDur(medianOfMedians), rssRange)
+	}
+	fmt.Fprintf(w, "\n")
+}
+
 func orNA(s string) string {
 	if s == "" {
 		return "unknown"
@@ -171,8 +245,8 @@ func joinNatural(names []string) string {
 var competitorConfigRows = map[string]string{
 	"chcrawl":   "| chcrawl | default (10 workers) | %[1]d (-max-depth) | JS endpoint mining always on (static regex miner, no headless) | production default: 3 retries, exponential backoff, 429+5xx | 5s (-timeout) | followed (engine default cap) | chcrawl default | JSONL to stdout |\n",
 	"katana":    "| katana | -c 10 | %[1]d (-d) | -jc (JS endpoint parsing, non-headless) | -retry 1 | -timeout 5 | followed (katana default) | katana default | -jsonl -silent |\n",
-	"hakrawler": "| hakrawler | -t 10 | %[1]d (-d) | none (hakrawler has no JS-mining mode) | none exposed | -timeout 5 | followed (hakrawler default) | hakrawler default | -json |\n",
-	"gospider":  "| gospider | -t 1 -c 5 | %[1]d (-d) | linkfinder (regex JS miner, non-headless) | none exposed | -m 5 | followed (gospider default) | gospider default (\"web\") | plain tagged stdout |\n",
+	"hakrawler": "| hakrawler | -t 10 (tool default: 8) | %[1]d (-d) | none (hakrawler has no JS-mining mode) | none exposed | 5s, imposed (tool default: none) | followed (hakrawler default) | hakrawler default | -json |\n",
+	"gospider":  "| gospider | -t 1 -c 5 (both tool defaults) | %[1]d (-d) | linkfinder (regex JS miner, non-headless) | none exposed | 5s, imposed (tool default: 10s) | followed (gospider default) | gospider default (\"web\") | plain tagged stdout |\n",
 }
 
 func writeCompetitorConfiguration(w io.Writer, meta CompetitorReportMeta) {
@@ -191,11 +265,48 @@ func writeCompetitorConfiguration(w io.Writer, meta CompetitorReportMeta) {
 	fmt.Fprintf(w, "Scope: same-origin only for every tool (workloads are single-host; see\n")
 	fmt.Fprintf(w, "w9-multi-host-scope exclusion above). See `internal/benchlab/tools.go` for\n")
 	fmt.Fprintf(w, "the exact command line each tool is invoked with.\n\n")
+	fmt.Fprintf(w, "**Fairness audit** (verified against each tool's own `-h`/`--help` output,\n")
+	fmt.Fprintf(w, "not assumed): gospider's `-t 1 -c 5` are its own documented defaults, not a\n")
+	fmt.Fprintf(w, "deliberately weak setting — `-t` only parallelizes across multiple seed\n")
+	fmt.Fprintf(w, "sites, irrelevant here since every workload gives it exactly one. hakrawler's\n")
+	fmt.Fprintf(w, "`-t 10` is slightly *above* its own default of 8. The one real, deliberate\n")
+	fmt.Fprintf(w, "asymmetry: the 5s timeout is imposed uniformly by this harness and matches\n")
+	fmt.Fprintf(w, "chcrawl's own default, but matches neither external tool's own default\n")
+	fmt.Fprintf(w, "(hakrawler defaults to no timeout at all; gospider defaults to 10s) — a\n")
+	fmt.Fprintf(w, "deliberate like-for-like choice over each tool's natural behavior, disclosed\n")
+	fmt.Fprintf(w, "here rather than left implicit.\n\n")
+}
+
+// writeReproducibility lists each workload's interleaving seed; the full
+// per-repetition tool order lives in the JSON report's run_logs field
+// instead of here, since printing it in markdown would be one line per
+// repetition per workload.
+func writeReproducibility(w io.Writer, meta CompetitorReportMeta) {
+	if len(meta.RunLogs) == 0 {
+		return
+	}
+	names := make([]string, 0, len(meta.RunLogs))
+	for name := range meta.RunLogs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	fmt.Fprintf(w, "### Reproducibility\n\n")
+	fmt.Fprintf(w, "Tool order was independently randomized per repetition per workload (see\n")
+	fmt.Fprintf(w, "Methodology above); each workload's seed reproduces its exact sequence.\n")
+	fmt.Fprintf(w, "The full per-repetition order (not just the seed) is in the JSON report's\n")
+	fmt.Fprintf(w, "`run_logs` field.\n\n")
+	fmt.Fprintf(w, "| workload | seed |\n")
+	fmt.Fprintf(w, "|---|---:|\n")
+	for _, name := range names {
+		fmt.Fprintf(w, "| %s | %d |\n", name, meta.RunLogs[name].Seed)
+	}
+	fmt.Fprintf(w, "\n")
 }
 
 func writeProductionTable(w io.Writer, workloads []string, results map[string]map[string]*CompetitorStats) {
-	fmt.Fprintf(w, "| workload | competitor | runs | median | p95 | p99 | requests/sec | peak RSS | correctness | status |\n")
-	fmt.Fprintf(w, "|---|---|---:|---:|---:|---:|---:|---:|---|---|\n")
+	fmt.Fprintf(w, "| workload | competitor | runs | median | MAD | p95 | p99 | min | max | requests/sec | peak RSS | correctness | status |\n")
+	fmt.Fprintf(w, "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---|\n")
 	for _, wl := range workloads {
 		for _, tool := range competitorToolOrder() {
 			cs := results[wl][tool]
@@ -203,21 +314,24 @@ func writeProductionTable(w io.Writer, workloads []string, results map[string]ma
 				continue
 			}
 			if !cs.Available {
-				fmt.Fprintf(w, "| %s | %s | — | — | — | — | — | — | — | NOT INSTALLED |\n", wl, tool)
+				fmt.Fprintf(w, "| %s | %s | — | — | — | — | — | — | — | — | — | — | NOT INSTALLED |\n", wl, tool)
 				continue
 			}
 			rps := fmt.Sprintf("%.1f", cs.MedianRPS)
 			if cs.RPSIsApproximate {
 				rps += "*"
 			}
-			fmt.Fprintf(w, "| %s | %s | %d | %s | %s | %s | %s | %s | %d/%d | %s |\n",
-				wl, tool, cs.Runs, fmtDur(cs.Duration.Median), fmtDur(cs.Duration.P95), fmtDur(cs.Duration.P99),
+			fmt.Fprintf(w, "| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s | %d/%d | %s |\n",
+				wl, tool, cs.Runs, fmtDur(cs.Duration.Median), fmtDur(cs.Duration.MAD),
+				fmtDur(cs.Duration.P95), fmtDur(cs.Duration.P99), fmtDur(cs.Duration.Min), fmtDur(cs.Duration.Max),
 				rps, competitorRSS(cs), cs.PassCount, cs.Runs, cs.Status)
 		}
 	}
 	fmt.Fprintf(w, "\n`*` requests/sec is approximate (found-URLs/sec, not a raw HTTP request\n")
 	fmt.Fprintf(w, "count) for tools that don't expose a request counter — only chcrawl's own\n")
-	fmt.Fprintf(w, "JSONL summary reports true requests made.\n\n")
+	fmt.Fprintf(w, "JSONL summary reports true requests made. MAD is median absolute deviation\n")
+	fmt.Fprintf(w, "from the median (see Methodology) — a small median gap between two tools\n")
+	fmt.Fprintf(w, "that's within either tool's own MAD is noise, not a real difference.\n\n")
 }
 
 func competitorRSS(cs *CompetitorStats) string {
@@ -293,6 +407,34 @@ func writeCorrectnessTable(w io.Writer, workloads []string, results map[string]m
 		fmt.Fprintf(w, "| %s | %d | %s |\n", wl, oracleSize, strings.Join(cells, " | "))
 	}
 	fmt.Fprintf(w, "\n")
+	writeCorrectnessDetails(w, workloads, results)
+}
+
+// writeCorrectnessDetails lists, for every FAIL/FLAKY result, which
+// ground-truth pages were missed and whether the same pages were missed
+// every failing run or different pages on different runs. Silent for a
+// workload/tool with no failures.
+func writeCorrectnessDetails(w io.Writer, workloads []string, results map[string]map[string]*CompetitorStats) {
+	var lines []string
+	for _, wl := range workloads {
+		for _, tool := range competitorToolOrder() {
+			cs := results[wl][tool]
+			if cs == nil || !cs.Available || cs.Status == "PASS" {
+				continue
+			}
+			reproduced := "varies run to run, not the same pages every time"
+			if cs.MissingPathsConsistent {
+				reproduced = "reproduced identically on every failing run"
+			}
+			lines = append(lines, fmt.Sprintf("- **%s / %s** (%s, %d/%d passed, %s) — missing: %s",
+				wl, tool, cs.Status, cs.PassCount, cs.Runs, reproduced, strings.Join(cs.EverMissingPaths, ", ")))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "### Correctness detail\n\n")
+	fmt.Fprintf(w, "%s\n\n", strings.Join(lines, "\n"))
 }
 
 func writeCompetitorLimitations(w io.Writer) {

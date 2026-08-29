@@ -10,24 +10,17 @@ import (
 )
 
 // BenchmarkPipelineContention choreographs goroutines against real
-// hostLimiter + frontier.Frontier objects, reproducing pipeline.go's
-// actual call order without real HTTP/parse work (which would reintroduce
-// the wall-clock noise the whole topology-controlled investigation found
-// on this machine — see the delivered scale-bench report's reproducibility
-// section): `concurrency` goroutines each Acquire the single shared host,
-// then either (one goroutine, the "burst" role, matching a page with N
-// discovered links) does N sequential frontier.Push calls before
-// Release, or (the rest, "steady" roles, matching every other worker
-// independently draining the frontier) loop frontier.Pop.
+// hostLimiter + frontier.Frontier objects, reproducing pipeline.go's actual
+// call order without real HTTP/parse work: `concurrency` goroutines each
+// Acquire the single shared host, then either (one goroutine, the "burst"
+// role, matching a page with N discovered links) does N sequential
+// frontier.Push calls before Release, or (the rest, "steady" roles,
+// matching every other worker independently draining the frontier) loop
+// frontier.Pop.
 //
-// The `release=before|after` sub-benchmark is the direct A/B test for
-// Phase 1's fix: "before" releases the host slot right after the burst
-// role "would have" finished its fetch (i.e. immediately, before the push
-// loop) — matching the proposed pipeline.go change; "after" holds the
-// slot through the whole push loop — matching current behavior. Compare
-// the two to validate the fix in isolation before pipeline.go is touched,
-// and re-run after the real edit lands as a sanity check that the
-// synthetic model and the real change agree in direction.
+// The `release=before|after` sub-benchmark compares releasing the host slot
+// right after the burst role's fetch (before the push loop) against holding
+// it through the whole push loop.
 //
 // Run with:
 //
@@ -75,13 +68,9 @@ func runPipelineContention(b *testing.B, n int, releaseBefore bool) {
 		drained := make(chan struct{})
 		var wg sync.WaitGroup
 
-		// Steady roles mirror the real worker()/process() order exactly:
-		// Pop first, then Acquire/Release per item — so every steady
-		// goroutine keeps re-contending the host slot on every single item
-		// it processes (matching "workers parked in Acquire's select for
-		// the whole crawl"), rather than acquiring once and holding it,
-		// which would just permanently block most of them behind
-		// perHost's capacity instead of creating ongoing contention.
+		// Steady roles mirror worker()/process()'s real order: Pop first,
+		// then Acquire/Release per item, so each goroutine re-contends the
+		// host slot on every item instead of acquiring once and holding it.
 		steady := concurrency - 1
 		for s := 0; s < steady; s++ {
 			wg.Add(1)
