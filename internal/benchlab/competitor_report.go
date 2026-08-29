@@ -42,14 +42,36 @@ func externalToolNames() []string {
 }
 
 // WriteCompetitorJSON writes the full machine-readable report: every
-// sample, environment, tool versions, and run configuration.
+// sample, environment, tool versions, run configuration, and (per
+// workload, per external tool) the statistically-hardened pairwise
+// comparison against chcrawl — see computePairwise.
 func WriteCompetitorJSON(w io.Writer, meta CompetitorReportMeta, results map[string]map[string]*CompetitorStats) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(struct {
 		Meta      CompetitorReportMeta                   `json:"meta"`
 		Workloads map[string]map[string]*CompetitorStats `json:"workloads"`
-	}{meta, results})
+		Pairwise  map[string][]*PairwiseComparison       `json:"pairwise"`
+	}{meta, results, allPairwiseComparisons(results)})
+}
+
+// allPairwiseComparisons computes computePairwise(chcrawl, tool) for every
+// (workload, external tool) pair that has samples for both sides.
+func allPairwiseComparisons(results map[string]map[string]*CompetitorStats) map[string][]*PairwiseComparison {
+	out := make(map[string][]*PairwiseComparison, len(results))
+	for workload, stats := range results {
+		base := stats["chcrawl"]
+		var comparisons []*PairwiseComparison
+		for _, name := range externalToolNames() {
+			if pc := computePairwise(name, base, stats[name]); pc != nil {
+				comparisons = append(comparisons, pc)
+			}
+		}
+		if comparisons != nil {
+			out[workload] = comparisons
+		}
+	}
+	return out
 }
 
 // WriteCompetitorReport renders the full human-readable comparison: three
@@ -96,10 +118,13 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "getrusage(RUSAGE_CHILDREN) Maxrss for that exact subprocess invocation\n")
 	fmt.Fprintf(w, "(Linux) — genuinely isolated per invocation, with no cross-run or\n")
 	fmt.Fprintf(w, "cross-tool contamination risk, since every invocation is already its own\n")
-	fmt.Fprintf(w, "fresh OS process. `w9-multi-host-scope` is excluded: same-origin scope is\n")
-	fmt.Fprintf(w, "implemented differently enough across these %d tools (registered-domain\n", len(order))
-	fmt.Fprintf(w, "matching, subdomain flags, no built-in concept at all) that scoring it\n")
-	fmt.Fprintf(w, "wouldn't be a fair comparison.\n\n")
+	fmt.Fprintf(w, "fresh OS process. Any workload with \"multi-host\" in its name is excluded\n")
+	fmt.Fprintf(w, "(currently `w9-multi-host-scope` and `w20-multi-host-scale`): cross-origin\n")
+	fmt.Fprintf(w, "following is implemented differently enough across these %d tools\n", len(order))
+	fmt.Fprintf(w, "(registered-domain matching, subdomain flags, no built-in concept at all)\n")
+	fmt.Fprintf(w, "that scoring it wouldn't be a fair 3-tool comparison — these run instead as\n")
+	fmt.Fprintf(w, "chcrawl-only measurements (`chcrawl-bench -workload <name>`), reported\n")
+	fmt.Fprintf(w, "separately.\n\n")
 	writeCompetitorConfiguration(w, meta)
 	writeReproducibility(w, meta)
 
@@ -109,6 +134,23 @@ func WriteCompetitorReport(w io.Writer, meta CompetitorReportMeta, results map[s
 	fmt.Fprintf(w, "a user actually waits for from the CLI invocation. This is the primary,\n")
 	fmt.Fprintf(w, "public number for every tool.\n\n")
 	writeProductionTable(w, workloads, results)
+
+	fmt.Fprintf(w, "## View 1b: statistical comparison (chcrawl vs. each competitor)\n\n")
+	fmt.Fprintf(w, "Paired on workload/environment (both tools measured on the same machine,\n")
+	fmt.Fprintf(w, "same synthetic target, same interleaved run), not on run order, which\n")
+	fmt.Fprintf(w, "carries no meaning here. Median ratio and median difference use\n")
+	fmt.Fprintf(w, "View 1's Duration medians directly. The 95%% CI is a percentile bootstrap\n")
+	fmt.Fprintf(w, "(%d resamples) on the median difference — it makes no normality\n", bootstrapResamples)
+	fmt.Fprintf(w, "assumption, appropriate for the skewed, sometimes bimodal runtime\n")
+	fmt.Fprintf(w, "distributions retries produce. Effect size is Cliff's delta (a\n")
+	fmt.Fprintf(w, "nonparametric measure in [-1, 1]; bands follow Romano et al. 2006:\n")
+	fmt.Fprintf(w, "negligible/small/medium/large), not a p-value — this report does not\n")
+	fmt.Fprintf(w, "compute or claim statistical-hypothesis-test significance at 10-30\n")
+	fmt.Fprintf(w, "samples per cell. \"Significant\" below means only: the bootstrap CI\n")
+	fmt.Fprintf(w, "excludes zero AND the difference exceeds both tools' own MAD — i.e. it\n")
+	fmt.Fprintf(w, "clears the same noise bar this report already applies in prose\n")
+	fmt.Fprintf(w, "elsewhere, now computed rather than eyeballed.\n\n")
+	writeStatisticalTable(w, workloads, results)
 
 	fmt.Fprintf(w, "## View 2: engine/active diagnostic\n\n")
 	fmt.Fprintf(w, "Wall-clock time with measured retry backoff excluded — NOT CPU time, NOT\n")
@@ -332,6 +374,40 @@ func writeProductionTable(w io.Writer, workloads []string, results map[string]ma
 	fmt.Fprintf(w, "JSONL summary reports true requests made. MAD is median absolute deviation\n")
 	fmt.Fprintf(w, "from the median (see Methodology) — a small median gap between two tools\n")
 	fmt.Fprintf(w, "that's within either tool's own MAD is noise, not a real difference.\n\n")
+}
+
+// writeStatisticalTable renders computePairwise's output for every
+// (workload, external tool) pair — see View 1b's doc prose in
+// WriteCompetitorReport for the methodology this table implements.
+func writeStatisticalTable(w io.Writer, workloads []string, results map[string]map[string]*CompetitorStats) {
+	fmt.Fprintf(w, "| workload | vs. | median ratio | median diff | 95%% CI | Cliff's δ | effect | significant |\n")
+	fmt.Fprintf(w, "|---|---|---:|---:|---:|---:|---|---|\n")
+	for _, wl := range workloads {
+		base := results[wl]["chcrawl"]
+		for _, tool := range externalToolNames() {
+			pc := computePairwise(tool, base, results[wl][tool])
+			if pc == nil {
+				continue
+			}
+			sig := "no"
+			if pc.SignificantAtNoise {
+				sig = "**yes**"
+			}
+			ratioStr := "—"
+			if pc.MedianRatio > 0 {
+				ratioStr = fmt.Sprintf("%.2fx", pc.MedianRatio)
+			}
+			fmt.Fprintf(w, "| %s | %s | %s | %s | [%s, %s] | %.2f | %s | %s |\n",
+				wl, tool, ratioStr, fmtDur(time.Duration(pc.MedianDiffNS)),
+				fmtDur(time.Duration(pc.CI95LowNS)), fmtDur(time.Duration(pc.CI95HighNS)),
+				pc.CliffsDelta, pc.EffectLabel, sig)
+		}
+	}
+	fmt.Fprintf(w, "\nMedian diff and CI bounds are chcrawl minus the competitor — positive\n")
+	fmt.Fprintf(w, "means chcrawl was slower on this workload, negative means chcrawl was\n")
+	fmt.Fprintf(w, "faster. Cliff's δ follows the same sign convention (positive = chcrawl\n")
+	fmt.Fprintf(w, "tends slower). A row with \"no\" under significant is reported as-is, not\n")
+	fmt.Fprintf(w, "omitted — an inconclusive result is still a result.\n\n")
 }
 
 func competitorRSS(cs *CompetitorStats) string {

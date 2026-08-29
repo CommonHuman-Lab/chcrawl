@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // hostLimiter gates concurrent in-flight fetches per host, created lazily
@@ -46,4 +47,37 @@ func (h *hostLimiter) Release(host string) {
 	if sem != nil {
 		<-sem
 	}
+}
+
+// hostGate adapts a hostLimiter slot to fetch.HostGate, letting Fetch
+// release and reacquire the slot around a retry's backoff sleep instead of
+// holding it for the sleep's full duration. held tracks whether the slot is
+// currently ours so Release is always safe to call — including from
+// pipeline.go's own unconditional release-on-exit — even after a failed
+// reacquire (e.g. context cancelled during backoff) already left the slot
+// unheld.
+type hostGate struct {
+	hosts *hostLimiter
+	host  string
+	held  atomic.Bool
+}
+
+func newHostGate(hosts *hostLimiter, host string) *hostGate {
+	g := &hostGate{hosts: hosts, host: host}
+	g.held.Store(true)
+	return g
+}
+
+func (g *hostGate) Release() {
+	if g.held.CompareAndSwap(true, false) {
+		g.hosts.Release(g.host)
+	}
+}
+
+func (g *hostGate) Acquire(ctx context.Context) error {
+	if err := g.hosts.Acquire(ctx, g.host); err != nil {
+		return err
+	}
+	g.held.Store(true)
+	return nil
 }

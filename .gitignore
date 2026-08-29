@@ -1,2 +1,5 @@
 *.test
 benchmarks/
+OPTIMIZATION_AUDIT.md
+COMPETITOR_BENCHMARK.md
+competitor-benchmark-results.json

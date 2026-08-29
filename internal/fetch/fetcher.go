@@ -107,7 +107,7 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 				return nil, lastErr
 			}
 			d := f.retryPolicy.Next(attempt, 0, "", err)
-			if !d.Retry || !sleepCtx(ctx, d.Delay) {
+			if !d.Retry || !sleepBackoff(ctx, req.Gate, d.Delay) {
 				return nil, lastErr
 			}
 			retryAttempts++
@@ -119,7 +119,7 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 			retryAfter = resp.Headers.Get("Retry-After")
 		}
 		d := f.retryPolicy.Next(attempt, resp.StatusCode, retryAfter, nil)
-		if !d.Retry || !sleepCtx(ctx, d.Delay) {
+		if !d.Retry || !sleepBackoff(ctx, req.Gate, d.Delay) {
 			resp.RetryAttempts = retryAttempts
 			resp.RetryDelay = retryDelay
 			return resp, nil
@@ -127,6 +127,23 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 		retryAttempts++
 		retryDelay += d.Delay
 	}
+}
+
+// sleepBackoff sleeps out a retry delay, releasing gate (if non-nil) for the
+// sleep's duration and reacquiring it before returning, so a held
+// per-host concurrency slot isn't wasted on a goroutine that's merely
+// waiting out backoff. Returns false if ctx is cancelled during the sleep
+// or the reacquire — callers must not retry after a false return, and must
+// not assume the gate is held in that case (see HostGate's doc comment).
+func sleepBackoff(ctx context.Context, gate HostGate, d time.Duration) bool {
+	if gate == nil {
+		return sleepCtx(ctx, d)
+	}
+	gate.Release()
+	if !sleepCtx(ctx, d) {
+		return false
+	}
+	return gate.Acquire(ctx) == nil
 }
 
 // sleepCtx sleeps for d, or returns false immediately if ctx is cancelled

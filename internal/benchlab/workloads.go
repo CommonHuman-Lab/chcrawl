@@ -28,6 +28,9 @@ func Workloads() map[string]*Site {
 		"w15-markup-edge-cases":    w15MarkupEdgeCases(),
 		"w16-intermittent-failure": w16IntermittentFailure(),
 		"w17-medium-scale":         w17MediumScale(),
+		"w18-uneven-latency":       w18UnevenLatency(),
+		"w19-duplication-stress":   w19DuplicationStress(),
+		"w20-multi-host-scale":     w20MultiHostScale(),
 	}
 }
 
@@ -315,4 +318,124 @@ func w16IntermittentFailure() *Site {
 // runs stay practical.
 func w17MediumScale() *Site {
 	return &Site{Name: "w17-medium-scale", Seed: "/", Pages: fanout("/", "/leaf/", 1000)}
+}
+
+// w18UnevenLatency tests whether a tool's concurrency model lets fast pages
+// on one origin proceed independently of a handful of slow ones, or
+// serializes behind them — a same-origin-scoped, tool-agnostic proxy for
+// "one slow host among many fast hosts" that stays fair across all 3 tools
+// (unlike a genuine cross-origin test, where each tool's differing
+// subdomain/scope-follow semantics would confound the comparison — see
+// w9-multi-host-scope's exclusion from -competitor-bench for the same
+// reason). 3 endpoints sleep 300ms each; the other 27 respond immediately.
+// A crawler whose concurrency serializes around any in-flight slow request
+// finishes closer to 3*300ms; one that keeps fast requests flowing
+// alongside the slow ones finishes much closer to the fast tail alone.
+func w18UnevenLatency() *Site {
+	const total = 30
+	const slow = 3
+	root := PageSpec{Path: "/"}
+	pages := make([]PageSpec, 0, total+1)
+	for i := 0; i < total; i++ {
+		leaf := "/leaf/" + strconv.Itoa(i)
+		root.Links = append(root.Links, leaf)
+		p := PageSpec{Path: leaf}
+		if i < slow {
+			p.DelayMS = 300
+		}
+		pages = append(pages, p)
+	}
+	pages = append(pages, root)
+	return &Site{Name: "w18-uneven-latency", Seed: "/", Pages: pages}
+}
+
+// w19DuplicationStress extends w13-url-normalization's idea (four textual
+// variants of one URL) to real volume: 300 links across only 20 distinct
+// target pages, cycling through 5 href patterns per target (canonical,
+// trailing-slash, a distinct #fragment per occurrence, a fixed query
+// string, and an empty query string), each repeated 3x. Fragments always
+// collapse (normalize.FromParsed strips them unconditionally) and repeated
+// identical hrefs always collapse (exact-duplicate discovery, the most
+// common real-world dedup case); trailing-slash and query-bearing variants
+// are deliberately real, separately-routed pages here (the server has no
+// route for the trailing-slash form, so it 404s — the oracle expects
+// exactly that, not a silent collapse), so this exercises both genuine
+// normalization-driven dedup and a crawler's ability to still stay correct
+// when a "variant" isn't actually the same resource.
+func w19DuplicationStress() *Site {
+	const distinctTargets = 20
+	const variantsPerTarget = 15
+	root := PageSpec{Path: "/"}
+	pages := make([]PageSpec, 0, distinctTargets+1)
+	for i := 0; i < distinctTargets; i++ {
+		target := "/target" + strconv.Itoa(i)
+		for v := 0; v < variantsPerTarget; v++ {
+			root.Links = append(root.Links, duplicateVariant(target, v))
+		}
+		pages = append(pages, PageSpec{Path: target})
+	}
+	pages = append(pages, root)
+	return &Site{Name: "w19-duplication-stress", Seed: "/", Pages: pages}
+}
+
+// duplicateVariant returns the v-th textual variant of target that a
+// correct normalization pass collapses back to the same page.
+func duplicateVariant(target string, v int) string {
+	switch v % 5 {
+	case 0:
+		return target // canonical
+	case 1:
+		return target + "/" // trailing slash
+	case 2:
+		return target + "#frag" + strconv.Itoa(v) // fragment (always stripped)
+	case 3:
+		return target + "?a=1&b=2" // query present, order/canonicalization-sensitive
+	default:
+		return target + "?" // empty query string
+	}
+}
+
+// w20MultiHostScale is a genuine cross-origin workload — chcrawl's own
+// hostLimiter, dedup, and frontier are all keyed by full host:port, and
+// every httptest.Server in this Site's 8 Hosts binds 127.0.0.1 on an
+// independent port, so from the engine's perspective these are 8 real,
+// distinct hosts, not a same-origin simulation. Named with "multi-host" so
+// -competitor-bench excludes it (hakrawler/gospider's cross-origin/subdomain
+// flag semantics differ enough from chcrawl's own that a 3-tool comparison
+// here wouldn't be fair — same reasoning as w9-multi-host-scope's
+// exclusion) and so the oracle/stats runners in cmd/chcrawl-bench
+// automatically run it with SameOrigin=false, letting chcrawl actually
+// cross hosts. This is a chcrawl-only measurement of whether its own
+// concurrency model (in particular hostLimiter.mu, the one genuinely
+// global — if cheap — lock touched on every Acquire/Release regardless of
+// host.
+func w20MultiHostScale() *Site {
+	const numHosts = 8
+	const leavesPerHost = 20
+	hosts := make([]string, numHosts)
+	for i := range hosts {
+		hosts[i] = "h" + strconv.Itoa(i)
+	}
+
+	seedRoot := PageSpec{Host: hosts[0], Path: "/"}
+	pages := make([]PageSpec, 0, 1+numHosts*(leavesPerHost+1))
+	for _, h := range hosts {
+		seedRoot.Links = append(seedRoot.Links, h+":/root")
+	}
+	pages = append(pages, seedRoot)
+
+	for hi, h := range hosts {
+		hostRoot := PageSpec{Host: h, Path: "/root"}
+		for j := 0; j < leavesPerHost; j++ {
+			leafPath := "/leaf/" + strconv.Itoa(j)
+			hostRoot.Links = append(hostRoot.Links, leafPath)
+			leaf := PageSpec{Host: h, Path: leafPath}
+			if hi == 0 && j < 3 {
+				leaf.DelayMS = 300
+			}
+			pages = append(pages, leaf)
+		}
+		pages = append(pages, hostRoot)
+	}
+	return &Site{Name: "w20-multi-host-scale", Seed: "/", Hosts: hosts, Pages: pages}
 }

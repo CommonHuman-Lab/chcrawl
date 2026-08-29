@@ -44,11 +44,11 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	if err := e.hosts.Acquire(ctx, target.Host); err != nil {
 		return
 	}
-	releaseHost := sync.OnceFunc(func() { e.hosts.Release(target.Host) })
-	defer releaseHost()
+	gate := newHostGate(e.hosts, target.Host)
+	defer gate.Release()
 
 	e.stats.requestsMade.Add(1)
-	resp, err := e.fetcher.Fetch(ctx, fetch.Request{URL: item.URL, Method: "GET"})
+	resp, err := e.fetcher.Fetch(ctx, fetch.Request{URL: item.URL, Method: "GET", Gate: gate})
 	if err != nil {
 		e.stats.responsesFailed.Add(1)
 		_ = e.writer.WriteError(output.ErrorEvent{URL: item.URL, Stage: "fetch", Error: err.Error()})
@@ -77,7 +77,7 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 		e.stats.jsFiles.Add(1)
 	}
 
-	releaseHost()
+	gate.Release()
 
 	if !e.admitPageBudget() {
 		cancel()
