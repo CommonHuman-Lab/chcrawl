@@ -5,6 +5,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 )
@@ -12,11 +13,22 @@ import (
 // These patterns match an absolute wss?:// literal (optionally inside a
 // `new WebSocket(...)` call), or a relative "/path" passed to
 // `new WebSocket(...)`.
+//
+// Compilation is deferred to initWebSocketRegexes, called only after
+// Extract's cheap byte-scan already found "WebSocket"/"ws://"/"wss://" in
+// the body — most pages contain none of those and never pay for compiling
+// these 3 regexes at all.
 var (
-	wsNewAbsoluteRe  = regexp.MustCompile(`new\s+WebSocket\s*\(\s*["'` + "`" + `](wss?://[^"'` + "`" + `\s)]+)["'` + "`" + `]`)
-	wsBareAbsoluteRe = regexp.MustCompile(`["'` + "`" + `](wss?://[^"'` + "`" + `\s)]{4,})["'` + "`" + `]`)
-	wsNewRelativeRe  = regexp.MustCompile(`new\s+WebSocket\s*\(\s*["'` + "`" + `](/[^"'` + "`" + `\s)]+)["'` + "`" + `]`)
+	wsNewAbsoluteRe  *regexp.Regexp
+	wsBareAbsoluteRe *regexp.Regexp
+	wsNewRelativeRe  *regexp.Regexp
 )
+
+var initWebSocketRegexes = sync.OnceFunc(func() {
+	wsNewAbsoluteRe = regexp.MustCompile(`new\s+WebSocket\s*\(\s*["'` + "`" + `](wss?://[^"'` + "`" + `\s)]+)["'` + "`" + `]`)
+	wsBareAbsoluteRe = regexp.MustCompile(`["'` + "`" + `](wss?://[^"'` + "`" + `\s)]{4,})["'` + "`" + `]`)
+	wsNewRelativeRe = regexp.MustCompile(`new\s+WebSocket\s*\(\s*["'` + "`" + `](/[^"'` + "`" + `\s)]+)["'` + "`" + `]`)
+})
 
 var metaWebSocket = map[string]string{"source": "websocket"}
 
@@ -38,6 +50,7 @@ func (WebSocketExtractor) Extract(ctx context.Context, in Input) ([]Discovery, e
 		!bytes.Contains(body, []byte("wss://")) {
 		return nil, nil
 	}
+	initWebSocketRegexes()
 
 	src := string(in.Resp.Body)
 	seen := map[string]bool{}

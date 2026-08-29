@@ -180,8 +180,13 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 	if err != nil {
 		return nil, err
 	}
-	httpReq.Header = f.baseHeaders.Clone()
+	// f.baseHeaders is built once at fetcher construction and never mutated
+	// afterward, so concurrent GET requests (the overwhelming majority of
+	// any crawl) can safely share it directly. Only clone when this request
+	// needs its own Content-Type, since that mutates the map in place.
+	httpReq.Header = f.baseHeaders
 	if req.ContentType != "" {
+		httpReq.Header = f.baseHeaders.Clone()
 		httpReq.Header.Set("Content-Type", req.ContentType)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 )
@@ -13,20 +14,40 @@ import (
 // invisible to this extractor. A more general miner (matching arbitrary
 // path conventions) is future work, not a drop-in replacement for these
 // patterns.
+//
+// Compilation is deferred to initJSEndpointRegexes (invoked from Extract,
+// which Applies gates on a "javascript" content-type) rather than done at
+// package init: most crawled pages are never JavaScript, so most process
+// invocations would otherwise pay for compiling 10 regexes they never use.
 var (
+	methodTemplateRe *regexp.Regexp
+	staticPathRe     *regexp.Regexp
+	varAssignRe      *regexp.Regexp
+	varSuffixRe      *regexp.Regexp
+	chunkFileRe      *regexp.Regexp
+	templateVarRe    *regexp.Regexp
+
+	hostVarHint *regexp.Regexp
+	idVarHint   *regexp.Regexp
+
+	methodKeywordRe *regexp.Regexp
+	trailingAlphaRe *regexp.Regexp
+)
+
+var initJSEndpointRegexes = sync.OnceFunc(func() {
 	methodTemplateRe = regexp.MustCompile("(?i)\\b(get|post|put|patch|delete)\\s*\\(\\s*`([^`]*/(?:rest|api)/[^`]*)`")
-	staticPathRe     = regexp.MustCompile(`["'](/(?:rest|api)/[A-Za-z0-9/_\-?=&%]+)["']`)
-	varAssignRe      = regexp.MustCompile(`(?:this\.)?(\w+)\s*=\s*[^;]+?["'](/(?:rest|api)/[A-Za-z0-9/_\-]+)["']`)
-	varSuffixRe      = regexp.MustCompile(`(?i)\b(get|post|put|patch|delete)\s*\(\s*(?:this\.)?(\w+)\s*\+\s*["']([/A-Za-z0-9_\-]+)["']`)
-	chunkFileRe      = regexp.MustCompile(`\b(chunk-[A-Za-z0-9_\-]+\.js)\b`)
-	templateVarRe    = regexp.MustCompile(`\$\{([^}]*)\}`)
+	staticPathRe = regexp.MustCompile(`["'](/(?:rest|api)/[A-Za-z0-9/_\-?=&%]+)["']`)
+	varAssignRe = regexp.MustCompile(`(?:this\.)?(\w+)\s*=\s*[^;]+?["'](/(?:rest|api)/[A-Za-z0-9/_\-]+)["']`)
+	varSuffixRe = regexp.MustCompile(`(?i)\b(get|post|put|patch|delete)\s*\(\s*(?:this\.)?(\w+)\s*\+\s*["']([/A-Za-z0-9_\-]+)["']`)
+	chunkFileRe = regexp.MustCompile(`\b(chunk-[A-Za-z0-9_\-]+\.js)\b`)
+	templateVarRe = regexp.MustCompile(`\$\{([^}]*)\}`)
 
 	hostVarHint = regexp.MustCompile(`(?i)host|server|url|base|origin`)
-	idVarHint   = regexp.MustCompile(`(?i)id|num|page|limit|offset|count`)
+	idVarHint = regexp.MustCompile(`(?i)id|num|page|limit|offset|count`)
 
 	methodKeywordRe = regexp.MustCompile(`(?i)\b(get|post|put|patch|delete)\s*\(\s*$`)
 	trailingAlphaRe = regexp.MustCompile(`^[A-Za-z]+$`)
-)
+})
 
 var (
 	metaJSEndpoint = map[string]string{"source": "js_endpoint"}
@@ -44,6 +65,7 @@ func (JSEndpointExtractor) Applies(resp *fetch.Response) bool {
 }
 
 func (JSEndpointExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error) {
+	initJSEndpointRegexes()
 	src := string(in.Resp.Body)
 	origin := in.BaseURL.Scheme + "://" + in.BaseURL.Host
 

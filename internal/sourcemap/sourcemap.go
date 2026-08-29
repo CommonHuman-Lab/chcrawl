@@ -11,17 +11,27 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 )
 
 // sourceMappingRe finds a "//# sourceMappingURL=..." or
-// "//@ sourceMappingURL=..." comment.
-var sourceMappingRe = regexp.MustCompile(`//[#@]\s*sourceMappingURL=(\S+)`)
+// "//@ sourceMappingURL=..." comment. noisePatterns filters out source
+// paths that are never useful for endpoint-mining purposes: vendored/
+// generated code, not application logic.
+//
+// Both are compiled lazily (see initRegexes) since Fetch is only reached
+// for actual JS responses — most crawled pages never touch this package.
+var (
+	sourceMappingRe *regexp.Regexp
+	noisePatterns   *regexp.Regexp
+)
 
-// noisePatterns filters out source paths that are never useful for
-// endpoint-mining purposes: vendored/generated code, not application logic.
-var noisePatterns = regexp.MustCompile(`node_modules/|webpack/runtime|__webpack_require__|\.spec\.[jt]s$|\.test\.[jt]s$|/vendor/`)
+var initRegexes = sync.OnceFunc(func() {
+	sourceMappingRe = regexp.MustCompile(`//[#@]\s*sourceMappingURL=(\S+)`)
+	noisePatterns = regexp.MustCompile(`node_modules/|webpack/runtime|__webpack_require__|\.spec\.[jt]s$|\.test\.[jt]s$|/vendor/`)
+})
 
 // searchWindowBytes bounds the sourceMappingURL search to the last 4096
 // bytes of the file, since the comment is always near the end of a
@@ -52,6 +62,7 @@ type sourceMapJSON struct {
 // file. jsURL is the JS file's URL (used to resolve a relative map URL);
 // jsBody is its already-downloaded content.
 func Fetch(ctx context.Context, fetcher fetch.Fetcher, jsURL string, jsBody []byte) (*Result, error) {
+	initRegexes()
 	mapURLRaw, ok := findMapURL(jsBody)
 	if !ok {
 		return nil, nil
