@@ -54,3 +54,17 @@ Key flags: `-concurrency`, `-per-host-concurrency`, `-max-pages`,
   crawled, recovers original pre-minification source (noise-filtered:
   `node_modules`, `webpack/runtime`, `.spec`/`.test` files, `/vendor/`
   excluded) and reports what was recovered as a `source_map` discovery.
+
+## Legal & Ethical Use
+
+Only run chcrawl against applications you own or have explicit written authorization to test. Authorized use includes penetration testing engagements, bug bounty programs within defined scope, and CTF competitions.
+
+The authors accept no liability for unauthorized or illegal use.
+
+---
+
+## License
+
+Licensed under the [AGPLv3](LICENSE). You are free to use, modify, and distribute this software. If you run it as a service or distribute it, the source must remain open.
+
+For commercial licensing, contact the author.
