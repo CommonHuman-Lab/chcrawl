@@ -87,7 +87,7 @@ Flags:
 	var (
 		concurrency     = fs.Int("concurrency", 10, "global concurrent worker count")
 		perHost         = fs.Int("per-host-concurrency", 4, "max concurrent in-flight requests per host")
-		maxPages        = fs.Int("max-pages", 50, "stop after this many successfully parsed pages (0 = unbounded)")
+		maxPages        = fs.Int("max-pages", 100, "stop after this many successfully parsed pages (0 = unbounded)")
 		maxDepth        = fs.Int("max-depth", 3, "maximum BFS depth from the seed URL")
 		maxDuration     = fs.Duration("max-duration", 0, "stop after this long (0 = unbounded)")
 		maxFrontierSize = fs.Int("max-frontier-size", 100_000, "bounded frontier capacity (backpressure kicks in above this)")

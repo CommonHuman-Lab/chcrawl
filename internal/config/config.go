@@ -115,7 +115,7 @@ func defaults() *Options {
 		Concurrency:              10,
 		PerHostConcurrency:       4,
 		MaxFrontierSize:          100_000,
-		MaxPages:                 50,
+		MaxPages:                 100,
 		MaxDepth:                 3,
 		CountErrorsAgainstBudget: false,
 		SameOrigin:               true,
