@@ -103,6 +103,7 @@ Flags:
 		legacy          = fs.Bool("legacy-mode", false, "use simpler legacy normalization/budget/retry behavior")
 		respectRobots   = fs.Bool("respect-robots-txt", false, "honor robots.txt Disallow rules (off by default)")
 		discoverOpenAPI = fs.Bool("discover-openapi", false, "probe canonical OpenAPI/Swagger spec locations against the seed's origin")
+		discoverSitemap = fs.Bool("discover-sitemap", false, "discover the site's XML sitemap (robots.txt Sitemap: or /sitemap.xml) and seed the crawl with its URLs")
 		recoverMaps     = fs.Bool("recover-source-maps", false, "recover original JS source via .js.map files for every JS file crawled")
 		sortQueryParams = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
 		outPath         = fs.String("output", "", "also write the full JSONL record stream to this file")
@@ -142,6 +143,7 @@ Flags:
 		config.WithRespectRobotsTxt(*respectRobots),
 		config.WithSortQueryParams(*sortQueryParams),
 		config.WithDiscoverOpenAPI(*discoverOpenAPI),
+		config.WithDiscoverSitemap(*discoverSitemap),
 		config.WithRecoverSourceMaps(*recoverMaps),
 	}
 	if len(headers) > 0 {

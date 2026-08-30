@@ -33,6 +33,7 @@ type Engine struct {
 	hosts          *hostLimiter
 	robots         *robots.Checker // nil unless cfg.RespectRobotsTxt
 	openapiFetcher fetch.Fetcher   // nil unless cfg.DiscoverOpenAPI
+	sitemapFetcher fetch.Fetcher   // nil unless cfg.DiscoverSitemap
 }
 
 // New builds an Engine ready to run a single crawl of cfg.SeedURL.
@@ -130,6 +131,25 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		}
 	}
 
+	var sitemapFetcher fetch.Fetcher
+	if cfg.DiscoverSitemap {
+		// Sitemap XML is commonly served as application/xml or text/xml,
+		// and robots.txt as text/plain — neither guaranteed to match the
+		// crawl fetcher's content-type allowlist, so it gets its own
+		// unrestricted fetcher (mirrors the robots/openapi pattern).
+		sitemapFetcher, err = fetch.New(fetch.Config{
+			Timeout:            cfg.Timeout,
+			Proxy:              cfg.Proxy,
+			Headers:            cfg.Headers,
+			InsecureSkipVerify: cfg.InsecureSkipVerify,
+			MaxBodyBytes:       cfg.MaxBodyBytes,
+			MaxRedirects:       cfg.MaxRedirects,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("engine: building sitemap discovery fetcher: %w", err)
+		}
+	}
+
 	return &Engine{
 		cfg:            cfg,
 		seedURL:        seedURL,
@@ -143,6 +163,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		hosts:          newHostLimiter(cfg.PerHostConcurrency),
 		robots:         robotsChecker,
 		openapiFetcher: openapiFetcher,
+		sitemapFetcher: sitemapFetcher,
 	}, nil
 }
 
@@ -167,6 +188,13 @@ func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	e.stats.urlsUnique.Add(1)
 	e.stats.urlsInScope.Add(1)
 	e.enqueue(ctx, &pending, frontier.Item{URL: seedKey, Depth: 0, DiscoveredVia: "seed"})
+
+	// Sitemap seeding runs before workers start: injected items are part of
+	// the initial pending set, so the drained-channel can't close while
+	// sitemap URLs are still in flight from discovery.
+	if e.cfg.DiscoverSitemap && e.sitemapFetcher != nil {
+		e.seedSitemap(ctx, &pending)
+	}
 
 	for i := 0; i < e.cfg.Concurrency; i++ {
 		workers.Add(1)

@@ -528,6 +528,8 @@ func appendSummaryEventJSON(dst []byte, e *SummaryEvent) ([]byte, error) {
 	dst = appendJSONInt64(dst, e.SourceMapsRecovered)
 	dst = append(dst, `,"openapi_endpoints_discovered":`...)
 	dst = appendJSONInt64(dst, e.OpenAPIEndpoints)
+	dst = append(dst, `,"sitemap_urls_seeded":`...)
+	dst = appendJSONInt64(dst, e.SitemapURLs)
 	dst = append(dst, `,"retry_attempts":`...)
 	dst = appendJSONInt64(dst, e.RetryAttempts)
 	dst = append(dst, `,"retry_backoff_ns":`...)

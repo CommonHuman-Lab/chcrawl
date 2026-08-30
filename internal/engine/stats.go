@@ -28,6 +28,7 @@ type Stats struct {
 	pagesInBudget       atomic.Int64
 	sourceMapsRecovered atomic.Int64
 	openAPIEndpoints    atomic.Int64
+	sitemapURLs         atomic.Int64
 	retryAttempts       atomic.Int64
 	retryBackoffNS      atomic.Int64
 }
@@ -73,6 +74,7 @@ func (s *Stats) Snapshot(seed string, start time.Time, partial bool) output.Summ
 		RobotsDisallowed:        s.robotsDisallowed.Load(),
 		SourceMapsRecovered:     s.sourceMapsRecovered.Load(),
 		OpenAPIEndpoints:        s.openAPIEndpoints.Load(),
+		SitemapURLs:             s.sitemapURLs.Load(),
 		RetryAttempts:           s.retryAttempts.Load(),
 		RetryBackoff:            backoff,
 		ActiveWall:              activeWall,

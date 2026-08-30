@@ -68,6 +68,7 @@ type SummaryEvent struct {
 	RobotsDisallowed    int64         `json:"robots_disallowed"`
 	SourceMapsRecovered int64         `json:"source_maps_recovered"`
 	OpenAPIEndpoints    int64         `json:"openapi_endpoints_discovered"`
+	SitemapURLs         int64         `json:"sitemap_urls_seeded"`
 	RetryAttempts       int64         `json:"retry_attempts"`
 	// RetryBackoff/ActiveWall are nanosecond precision; the MS fields are
 	// rounded convenience copies. Prefer the ns fields for statistics — ms
