@@ -56,19 +56,7 @@ go build -o chcrawl ./cmd/chcrawl
 ./chcrawl -output result.jsonl https://target.example
 ```
 
-Output is emitted as structured JSONL, with one result oKey flags: `-concurrency`, `-per-host-concurrency`, `-max-pages`,
-`-max-depth`, `-max-duration`, `-same-origin`, `-exclude`, `-proxy`,
-`-cookies`, `-header` (repeatable), `-delay`, `-insecure`,
-`-respect-robots-txt`, `-discover-openapi`, `-recover-source-maps`,
-`-legacy-mode` (switches to simpler normalization/budget/retry behavior).r discovery record per line.
-
-### Key flags
-
-`-concurrency`, `-per-host-concurrency`, `-max-pages`, `-max-depth`,
-`-max-duration`, `-same-origin`, `-exclude`, `-proxy`, `-cookies`,
-`-header` (repeatable), `-delay`, `-insecure`,
-`-respect-robots-txt`, `-discover-openapi`, `-recover-source-maps`,
-`-legacy-mode`.
+Output is emitted as structured JSONL, with one result or discovery record per line.
 
 ### Key flags
 
