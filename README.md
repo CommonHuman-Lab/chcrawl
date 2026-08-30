@@ -3,13 +3,23 @@
 A high-performance, correctness-first web crawler and recon engine, native
 Go. Part of the CommonHuman-Lab toolkit.
 
-## Install / build
+## Installation
+
+Requires Go 1.27+.
 
 ```bash
+go install github.com/commonhuman-lab/chcrawl/cmd/chcrawl@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/commonhuman-lab/chcrawl.git
+cd chcrawl
 go build -o chcrawl ./cmd/chcrawl
 ```
 
-## Usage
+## Quick start
 
 ```bash
 ./chcrawl https://target.example
