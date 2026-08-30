@@ -39,6 +39,33 @@ func (h headerFlag) Set(v string) error {
 	return nil
 }
 
+func reorderArgs(fs *flag.FlagSet, args []string) []string {
+	flags := make([]string, 0, len(args))
+	positional := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if len(a) < 2 || a[0] != '-' {
+			positional = append(positional, a)
+			continue
+		}
+		flags = append(flags, a)
+		name := strings.TrimLeft(a, "-")
+		if strings.ContainsRune(name, '=') {
+			continue // "-flag=value" form already carries its value
+		}
+		if f := fs.Lookup(name); f != nil {
+			if bf, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && bf.IsBoolFlag() {
+				continue // boolean flags don't consume the next token
+			}
+		}
+		if i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, positional...)
+}
+
 func run(args []string) error {
 	fs := flag.NewFlagSet("chcrawl", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -47,8 +74,10 @@ func run(args []string) error {
 Usage:
   chcrawl [flags] <seed-url>
 
-Output is streamed JSONL: one "page" record per fetched page, "error"
-records for failures, and a final "summary" record with aggregate stats.
+The console shows a short human-readable progress stream and a final
+summary. Pass -output to also write the full JSONL record stream (one
+"page" record per fetched page, "error" records for failures, and a final
+"summary" record with aggregate stats) to a file.
 
 Flags:
 `, version)
@@ -58,7 +87,7 @@ Flags:
 	var (
 		concurrency     = fs.Int("concurrency", 10, "global concurrent worker count")
 		perHost         = fs.Int("per-host-concurrency", 4, "max concurrent in-flight requests per host")
-		maxPages        = fs.Int("max-pages", 50, "stop after this many successfully parsed pages")
+		maxPages        = fs.Int("max-pages", 50, "stop after this many successfully parsed pages (0 = unbounded)")
 		maxDepth        = fs.Int("max-depth", 3, "maximum BFS depth from the seed URL")
 		maxDuration     = fs.Duration("max-duration", 0, "stop after this long (0 = unbounded)")
 		maxFrontierSize = fs.Int("max-frontier-size", 100_000, "bounded frontier capacity (backpressure kicks in above this)")
@@ -76,13 +105,13 @@ Flags:
 		discoverOpenAPI = fs.Bool("discover-openapi", false, "probe canonical OpenAPI/Swagger spec locations against the seed's origin")
 		recoverMaps     = fs.Bool("recover-source-maps", false, "recover original JS source via .js.map files for every JS file crawled")
 		sortQueryParams = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
-		outPath         = fs.String("output", "", "write JSONL to this file instead of stdout")
+		outPath         = fs.String("output", "", "also write the full JSONL record stream to this file")
 		showVersion     = fs.Bool("version", false, "print the version and exit")
 	)
 	headers := headerFlag{}
 	fs.Var(headers, "header", "extra request header \"Name: Value\" (repeatable)")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return err
 	}
 	if *showVersion {
@@ -130,16 +159,15 @@ Flags:
 		return err
 	}
 
-	out := os.Stdout
+	var writer output.EventWriter = output.NewHumanWriter(os.Stdout, 10)
 	if *outPath != "" {
 		f, err := os.Create(*outPath)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		out = f
+		writer = output.NewMultiWriter(writer, output.NewWriter(f))
 	}
-	writer := output.NewWriter(out)
 
 	eng, err := engine.New(cfg, writer)
 	if err != nil {

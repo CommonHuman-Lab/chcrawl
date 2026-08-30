@@ -34,7 +34,8 @@ type Options struct {
 	MaxFrontierSize    int
 
 	// Crawl bounds.
-	MaxPages                 int
+	MaxPages                 int // 0 = unbounded
+
 	MaxDepth                 int
 	MaxDuration              time.Duration
 	CountErrorsAgainstBudget bool
@@ -168,8 +169,8 @@ func (o *Options) Validate() error {
 	if o.PerHostConcurrency > o.Concurrency {
 		return fmt.Errorf("config: PerHostConcurrency (%d) must not exceed Concurrency (%d)", o.PerHostConcurrency, o.Concurrency)
 	}
-	if o.MaxPages < 1 {
-		return fmt.Errorf("config: MaxPages must be >= 1")
+	if o.MaxPages < 0 {
+		return fmt.Errorf("config: MaxPages must be >= 0 (0 = unbounded)")
 	}
 	if o.MaxDepth < 0 {
 		return fmt.Errorf("config: MaxDepth must be >= 0")

@@ -28,7 +28,7 @@ type Engine struct {
 	scope          scope.Policy
 	dedup          dedup.VisitedSet
 	registry       *extract.Registry
-	writer         *output.Writer
+	writer         output.EventWriter
 	stats          *Stats
 	hosts          *hostLimiter
 	robots         *robots.Checker // nil unless cfg.RespectRobotsTxt
@@ -36,7 +36,7 @@ type Engine struct {
 }
 
 // New builds an Engine ready to run a single crawl of cfg.SeedURL.
-func New(cfg *config.Options, writer *output.Writer) (*Engine, error) {
+func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 	seedURL, err := url.Parse(cfg.SeedURL)
 	if err != nil {
 		return nil, fmt.Errorf("engine: invalid seed URL: %w", err)

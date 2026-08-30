@@ -115,11 +115,14 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	_ = e.writer.WritePage(evt)
 }
 
-// admitPageBudget atomically checks the MaxPages hard cap. It returns false
-// once the budget is exhausted, in which case the caller must trigger
-// engine-wide cancellation immediately rather than waiting for any
-// in-flight work to finish, so the cap can't be overshot.
+// admitPageBudget atomically checks the MaxPages hard cap (0 = unbounded).
+// It returns false once the budget is exhausted, in which case the caller
+// must trigger engine-wide cancellation immediately rather than waiting for
+// any in-flight work to finish, so the cap can't be overshot.
 func (e *Engine) admitPageBudget() bool {
+	if e.cfg.MaxPages == 0 {
+		return true
+	}
 	n := e.stats.pagesInBudget.Add(1)
 	return n <= int64(e.cfg.MaxPages)
 }

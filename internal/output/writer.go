@@ -5,6 +5,13 @@ import (
 	"sync"
 )
 
+type EventWriter interface {
+	WritePage(PageEvent) error
+	WriteError(ErrorEvent) error
+	WriteSummary(SummaryEvent) error
+	WriteOpenAPI(OpenAPIEvent) error
+}
+
 // Writer streams JSONL records to an underlying io.Writer, safe for
 // concurrent use by multiple crawl workers.
 type Writer struct {
