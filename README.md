@@ -71,8 +71,6 @@ Only run chcrawl against applications you own or have explicit written authoriza
 
 The authors accept no liability for unauthorized or illegal use.
 
----
-
 ## License
 
 Licensed under the [AGPLv3](LICENSE). You are free to use, modify, and distribute this software. If you run it as a service or distribute it, the source must remain open.
