@@ -1,3 +1,5 @@
+<img src="assets/logo.png" alt="CHCrawl" width="220"/>
+
 # chcrawl
 
 A high-performance, correctness-first web crawler and reconnaissance engine written in native Go. Built for authorized security testing and deep application discovery.
