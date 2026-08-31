@@ -33,6 +33,26 @@ type Engine struct {
 	hosts          *hostLimiter
 	robots         *robots.Checker // nil unless cfg.RespectRobotsTxt
 	openapiFetcher fetch.Fetcher   // nil unless cfg.DiscoverOpenAPI
+	sitemapFetcher fetch.Fetcher   // nil unless cfg.DiscoverSitemap
+}
+
+// newAuxFetcher builds an unrestricted fetcher (no content-type allowlist)
+// for a side-channel probe — robots.txt, OpenAPI specs, sitemaps, source
+// maps — that doesn't go through the main crawl fetcher's page-oriented
+// filtering. purpose is used only for the wrapped error message.
+func newAuxFetcher(cfg *config.Options, purpose string) (fetch.Fetcher, error) {
+	f, err := fetch.New(fetch.Config{
+		Timeout:            cfg.Timeout,
+		Proxy:              cfg.Proxy,
+		Headers:            cfg.Headers,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		MaxBodyBytes:       cfg.MaxBodyBytes,
+		MaxRedirects:       cfg.MaxRedirects,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("engine: building %s fetcher: %w", purpose, err)
+	}
+	return f, nil
 }
 
 // New builds an Engine ready to run a single crawl of cfg.SeedURL.
@@ -78,16 +98,9 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		// content-type (application/octet-stream, or nothing at all), which
 		// the crawl fetcher's content-type allowlist would otherwise
 		// silently discard.
-		sourceMapFetcher, err := fetch.New(fetch.Config{
-			Timeout:            cfg.Timeout,
-			Proxy:              cfg.Proxy,
-			Headers:            cfg.Headers,
-			InsecureSkipVerify: cfg.InsecureSkipVerify,
-			MaxBodyBytes:       cfg.MaxBodyBytes,
-			MaxRedirects:       cfg.MaxRedirects,
-		})
+		sourceMapFetcher, err := newAuxFetcher(cfg, "source-map")
 		if err != nil {
-			return nil, fmt.Errorf("engine: building source-map fetcher: %w", err)
+			return nil, err
 		}
 		extractors = append(extractors, extract.SourceMapExtractor{Fetcher: sourceMapFetcher})
 	}
@@ -98,16 +111,9 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		// robots.txt is text/plain, which the crawl fetcher's content-type
 		// allowlist would otherwise discard, so it gets its own fetcher
 		// with an unrestricted allowlist.
-		robotsFetcher, err := fetch.New(fetch.Config{
-			Timeout:            cfg.Timeout,
-			Proxy:              cfg.Proxy,
-			Headers:            cfg.Headers,
-			InsecureSkipVerify: cfg.InsecureSkipVerify,
-			MaxBodyBytes:       cfg.MaxBodyBytes,
-			MaxRedirects:       cfg.MaxRedirects,
-		})
+		robotsFetcher, err := newAuxFetcher(cfg, "robots.txt")
 		if err != nil {
-			return nil, fmt.Errorf("engine: building robots.txt fetcher: %w", err)
+			return nil, err
 		}
 		robotsChecker = robots.New(robotsFetcher, "*")
 	}
@@ -117,16 +123,21 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		// OpenAPI specs are commonly served as YAML (text/yaml,
 		// application/x-yaml, or even text/plain), none of which match the
 		// crawl fetcher's default content-type allowlist.
-		openapiFetcher, err = fetch.New(fetch.Config{
-			Timeout:            cfg.Timeout,
-			Proxy:              cfg.Proxy,
-			Headers:            cfg.Headers,
-			InsecureSkipVerify: cfg.InsecureSkipVerify,
-			MaxBodyBytes:       cfg.MaxBodyBytes,
-			MaxRedirects:       cfg.MaxRedirects,
-		})
+		openapiFetcher, err = newAuxFetcher(cfg, "OpenAPI discovery")
 		if err != nil {
-			return nil, fmt.Errorf("engine: building OpenAPI discovery fetcher: %w", err)
+			return nil, err
+		}
+	}
+
+	var sitemapFetcher fetch.Fetcher
+	if cfg.DiscoverSitemap {
+		// Sitemap XML is commonly served as application/xml or text/xml,
+		// and robots.txt as text/plain — neither guaranteed to match the
+		// crawl fetcher's content-type allowlist, so it gets its own
+		// unrestricted fetcher (mirrors the robots/openapi pattern).
+		sitemapFetcher, err = newAuxFetcher(cfg, "sitemap discovery")
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -143,6 +154,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		hosts:          newHostLimiter(cfg.PerHostConcurrency),
 		robots:         robotsChecker,
 		openapiFetcher: openapiFetcher,
+		sitemapFetcher: sitemapFetcher,
 	}, nil
 }
 
@@ -167,6 +179,13 @@ func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	e.stats.urlsUnique.Add(1)
 	e.stats.urlsInScope.Add(1)
 	e.enqueue(ctx, &pending, frontier.Item{URL: seedKey, Depth: 0, DiscoveredVia: "seed"})
+
+	// Sitemap seeding runs before workers start: injected items are part of
+	// the initial pending set, so the drained-channel can't close while
+	// sitemap URLs are still in flight from discovery.
+	if e.cfg.DiscoverSitemap && e.sitemapFetcher != nil {
+		e.seedSitemap(ctx, &pending)
+	}
 
 	for i := 0; i < e.cfg.Concurrency; i++ {
 		workers.Add(1)

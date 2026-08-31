@@ -30,8 +30,16 @@ type Tool struct {
 	// Stdin returns the process's stdin content, or "" for none.
 	Stdin func(seedURL string) string
 	// Parse extracts the set of absolute URLs the tool reported from its
-	// captured stdout.
+	// captured stdout (or, when OutputToFile is set, the file chcrawl wrote
+	// via -output — see OutputToFile's doc comment).
 	Parse func(seedURL string, stdout []byte) map[string]bool
+	// OutputToFile marks a tool whose machine-readable record stream isn't
+	// on stdout at all. chcrawl's stdout is always the human-readable
+	// progress view; the JSONL stream this harness parses only exists if
+	// asked for via "-output <path>". When set, the caller appends
+	// "-output <tempfile>" to the built command and feeds that file's
+	// bytes to Parse/parseChcrawlSummary instead of captured stdout.
+	OutputToFile bool
 }
 
 // Available reports whether the tool's binary can be found (via PATH, or
@@ -61,7 +69,8 @@ func ChcrawlTool(binaryPath string) Tool {
 				"-timeout", "5s",
 				seedURL)
 		},
-		Parse: parseChcrawl,
+		Parse:        parseChcrawl,
+		OutputToFile: true,
 	}
 }
 

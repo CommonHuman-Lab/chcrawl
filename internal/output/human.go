@@ -132,6 +132,9 @@ func (h *HumanWriter) WriteSummary(e SummaryEvent) error {
 	if e.OpenAPIEndpoints > 0 {
 		fmt.Fprintf(h.out, "  OpenAPI endpoints  %d\n", e.OpenAPIEndpoints)
 	}
+	if e.SitemapURLs > 0 {
+		fmt.Fprintf(h.out, "  sitemap seeds   %d\n", e.SitemapURLs)
+	}
 	if e.SourceMapsRecovered > 0 {
 		fmt.Fprintf(h.out, "  source maps   %d\n", e.SourceMapsRecovered)
 	}
