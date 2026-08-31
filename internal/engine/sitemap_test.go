@@ -10,6 +10,7 @@ import (
 	"github.com/commonhuman-lab/chcrawl/internal/config"
 	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/internal/sitemap"
 )
 
 // TestSitemapSeeding_CrawlsRoutesInvisibleInHTML verifies the core value
@@ -168,9 +169,80 @@ func TestSitemapSeeding_NoSitemapPresent(t *testing.T) {
 	}
 }
 
+// TestSitemapSeeding_UnboundedMaxPagesDoesNotDeadlock guards against a
+// regression where seedSitemap's only cap was `MaxPages > 0 && ...`, so
+// MaxPages=0 (documented as "unbounded") let it push more items than the
+// frontier had room for, blocking forever since no worker exists yet to
+// drain it.
+func TestSitemapSeeding_UnboundedMaxPagesDoesNotDeadlock(t *testing.T) {
+	var mux http.ServeMux
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><body>home</body></html>`))
+	})
+	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte(`<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">` +
+			`<url><loc>http://` + r.Host + `/a</loc></url>` +
+			`<url><loc>http://` + r.Host + `/b</loc></url>` +
+			`<url><loc>http://` + r.Host + `/c</loc></url>` +
+			`<url><loc>http://` + r.Host + `/d</loc></url>` +
+			`<url><loc>http://` + r.Host + `/e</loc></url></urlset>`))
+	})
+	mux.HandleFunc("/a", okPage)
+	mux.HandleFunc("/b", okPage)
+	mux.HandleFunc("/c", okPage)
+	mux.HandleFunc("/d", okPage)
+	mux.HandleFunc("/e", okPage)
+
+	srv := httptest.NewServer(&mux)
+	defer srv.Close()
+
+	cfg, err := config.New(srv.URL+"/",
+		config.WithConcurrency(1),
+		config.WithPerHostConcurrency(1),
+		config.WithMaxPages(0), // unbounded — the case that used to deadlock
+		config.WithMaxFrontierSize(3),
+		config.WithMaxDepth(1),
+		config.WithTimeout(5*time.Second),
+		config.WithDiscoverSitemap(true),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := New(cfg, output.NewWriter(discardWriter{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	var summary *output.SummaryEvent
+	go func() {
+		defer close(done)
+		summary, err = eng.Run(context.Background())
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run() deadlocked seeding sitemap URLs with MaxPages=0")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.SitemapURLs > 2 {
+		t.Errorf("SitemapURLs = %d, want <= 2 (capped by frontier headroom, not MaxPages)", summary.SitemapURLs)
+	}
+}
+
+func okPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(`<html><body>ok</body></html>`))
+}
+
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 
 // compile-time check: fetch.Fetcher satisfies sitemap.Fetcher usage in engine
-var _ fetch.Fetcher = (fetch.Fetcher)(nil)
+var _ sitemap.Fetcher = (fetch.Fetcher)(nil)

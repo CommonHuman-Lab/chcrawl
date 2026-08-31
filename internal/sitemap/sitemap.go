@@ -26,11 +26,14 @@ type Location struct {
 }
 
 // sitemapDoc handles both <urlset> (url entries) and <sitemapindex> (nested
-// sitemap refs) with a single struct. A document is an index iff it has
-// <sitemap> children; element matching ignores namespaces.
+// sitemap refs) with a single struct. Whether a document is an index is
+// decided by its root element name (XMLName), not by which child slice
+// ended up populated — a malformed document containing both <url> and
+// <sitemap> children must not have its <url> entries silently dropped.
 type sitemapDoc struct {
-	URLs  []sitemapEntry `xml:"url"`
-	Smaps []sitemapEntry `xml:"sitemap"`
+	XMLName xml.Name
+	URLs    []sitemapEntry `xml:"url"`
+	Smaps   []sitemapEntry `xml:"sitemap"`
 }
 
 type sitemapEntry struct {
@@ -49,8 +52,12 @@ type Fetcher interface {
 //  2. /sitemap.xml at the origin
 //
 // A sitemap index is expanded one level (up to maxSitemapDocs children).
+// limit caps the number of locations returned (0 = unbounded); once it's
+// reached, no further sitemap documents are fetched. This keeps the caller
+// from paying for (and blocking on) documents whose entries it will just
+// discard.
 // Returns (nil, nil) when no sitemap exists — that is not an error.
-func Discover(ctx context.Context, f Fetcher, origin string) ([]Location, error) {
+func Discover(ctx context.Context, f Fetcher, origin string, limit int) ([]Location, error) {
 	origin = strings.TrimRight(origin, "/")
 
 	// 1. robots.txt Sitemap: directives
@@ -66,6 +73,9 @@ func Discover(ctx context.Context, f Fetcher, origin string) ([]Location, error)
 	queue := append([]string(nil), sitemapURLs...)
 
 	for i := 0; i < len(queue) && i < maxSitemapDocs+1; i++ {
+		if limit > 0 && len(locs) >= limit {
+			break
+		}
 		smURL := queue[i]
 		if seen[smURL] {
 			continue
@@ -98,13 +108,13 @@ func fetchSitemap(ctx context.Context, f Fetcher, smURL string) ([]string, bool,
 	}
 	body := resp.Body
 	if len(body) > maxSitemapBytes {
-		body = body[:maxSitemapBytes]
+		return nil, false, fmt.Errorf("sitemap %s: exceeds %d byte limit", smURL, maxSitemapBytes)
 	}
 	var doc sitemapDoc
 	if err := xml.Unmarshal(body, &doc); err != nil {
 		return nil, false, fmt.Errorf("sitemap %s: parse: %w", smURL, err)
 	}
-	isIndex := len(doc.Smaps) > 0
+	isIndex := strings.EqualFold(doc.XMLName.Local, "sitemapindex")
 	var out []string
 	raw := doc.URLs
 	if isIndex {
@@ -130,8 +140,12 @@ func fromRobots(ctx context.Context, f Fetcher, origin string) []string {
 	if err != nil || resp.StatusCode >= 400 {
 		return nil
 	}
+	body := strings.TrimPrefix(string(resp.Body), string(rune(0xFEFF))) // strip UTF-8 BOM if present
 	var out []string
-	for _, line := range strings.Split(string(resp.Body), "\n") {
+	for _, line := range strings.Split(body, "\n") {
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
 		line = strings.TrimSpace(line)
 		if len(line) >= 9 && strings.EqualFold(line[:8], "sitemap:") {
 			sm := strings.TrimSpace(line[8:])

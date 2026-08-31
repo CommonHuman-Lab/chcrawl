@@ -21,19 +21,25 @@ import (
 // and dedup are enforced per URL exactly like discovered children: a sitemap
 // listing off-origin URLs has those entries dropped.
 func (e *Engine) seedSitemap(ctx context.Context, pending *sync.WaitGroup) {
+	limit := e.cfg.MaxFrontierSize - 1
+	if e.cfg.MaxPages > 0 && e.cfg.MaxPages < limit {
+		limit = e.cfg.MaxPages
+	}
+	if limit <= 0 {
+		return
+	}
+
 	origin := e.seedURL.Scheme + "://" + e.seedURL.Host
-	locs, err := sitemap.Discover(ctx, e.sitemapFetcher, origin)
+	locs, err := sitemap.Discover(ctx, e.sitemapFetcher, origin, limit)
 	if err != nil {
 		_ = e.writer.WriteError(output.ErrorEvent{URL: origin, Stage: "sitemap", Error: err.Error()})
 		return
 	}
 	for _, loc := range locs {
-		// The crawl budget stops at MaxPages anyway; injecting more seeds
-		// than that could block Push on the bounded frontier before any
-		// worker exists to drain it. Stop at the budget.
-		if e.cfg.MaxPages > 0 && e.stats.sitemapURLs.Load() >= int64(e.cfg.MaxPages) {
+		if e.stats.sitemapURLs.Load() >= int64(limit) {
 			break
 		}
+		e.stats.urlsDiscovered.Add(1)
 		u, err := url.Parse(loc.URL)
 		if err != nil {
 			continue
