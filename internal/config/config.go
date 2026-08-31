@@ -64,6 +64,7 @@ type Options struct {
 	RetryPolicy       retry.Policy
 	RecoverSourceMaps bool
 	DiscoverOpenAPI   bool
+	DiscoverSitemap   bool
 }
 
 // Option mutates an Options struct during construction.
@@ -108,6 +109,7 @@ func WithRetryPolicy(p retry.Policy) Option {
 }
 func WithRecoverSourceMaps(b bool) Option { return func(o *Options) { o.RecoverSourceMaps = b } }
 func WithDiscoverOpenAPI(b bool) Option   { return func(o *Options) { o.DiscoverOpenAPI = b } }
+func WithDiscoverSitemap(b bool) Option   { return func(o *Options) { o.DiscoverSitemap = b } }
 
 // defaults returns an Options populated with chcrawl's default values.
 func defaults() *Options {
