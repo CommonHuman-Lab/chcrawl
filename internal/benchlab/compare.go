@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,19 @@ func runOneTool(ctx context.Context, t Tool, seedURL string, maxDepth int, groun
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
+	// See competitor.go's runCompetitorOnce: chcrawl's JSONL record stream
+	// only exists via -output, never on stdout.
+	var recordFile string
+	if t.OutputToFile {
+		f, ferr := os.CreateTemp("", "benchlab-chcrawl-out-*.jsonl")
+		if ferr == nil {
+			recordFile = f.Name()
+			f.Close()
+			cmd.Args = append(cmd.Args, "-output", recordFile)
+			defer os.Remove(recordFile)
+		}
+	}
+
 	start := time.Now()
 	err := cmd.Run()
 	r.Duration = time.Since(start)
@@ -87,7 +101,14 @@ func runOneTool(ctx context.Context, t Tool, seedURL string, maxDepth int, groun
 		r.Err = err
 	}
 
-	found := t.Parse(seedURL, stdout.Bytes())
+	records := stdout.Bytes()
+	if recordFile != "" {
+		if b, rerr := os.ReadFile(recordFile); rerr == nil {
+			records = b
+		}
+	}
+
+	found := t.Parse(seedURL, records)
 	scoreAgainstGround(r, seedURL, found, ground)
 	return r
 }

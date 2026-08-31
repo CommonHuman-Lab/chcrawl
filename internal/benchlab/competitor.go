@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"math/rand"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -271,6 +272,20 @@ func runCompetitorOnce(ctx context.Context, site *Site, maxDepth int, tool Tool)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 
+	// chcrawl's stdout is the human-readable progress view; its JSONL
+	// record stream (what Parse/parseChcrawlSummary need) only exists on
+	// disk, via -output. Route it through a temp file instead of stdout.
+	var recordFile string
+	if tool.OutputToFile {
+		f, ferr := os.CreateTemp("", "benchlab-chcrawl-out-*.jsonl")
+		if ferr == nil {
+			recordFile = f.Name()
+			f.Close()
+			cmd.Args = append(cmd.Args, "-output", recordFile)
+			defer os.Remove(recordFile)
+		}
+	}
+
 	start := time.Now()
 	err := cmd.Run()
 	sample := CompetitorSample{Duration: time.Since(start), ExitCode: exitCodeOf(err)}
@@ -284,14 +299,21 @@ func runCompetitorOnce(ctx context.Context, site *Site, maxDepth int, tool Tool)
 		sample.RSSAvailable = true
 	}
 
-	found := tool.Parse(servers.SeedURL, stdout.Bytes())
+	records := stdout.Bytes()
+	if recordFile != "" {
+		if b, rerr := os.ReadFile(recordFile); rerr == nil {
+			records = b
+		}
+	}
+
+	found := tool.Parse(servers.SeedURL, records)
 	r := &CompareResult{Total: len(ground)}
 	scoreAgainstGround(r, servers.SeedURL, found, ground)
 	sample.Found, sample.Total, sample.Extra, sample.Malformed = r.Found, r.Total, r.Extra, r.Malformed
 	sample.MissingPaths, sample.ExtraPaths = r.MissingPaths, r.ExtraPaths
 	sample.Passed = r.Found == r.Total
 
-	if s, ok := parseChcrawlSummary(stdout.Bytes()); ok {
+	if s, ok := parseChcrawlSummary(records); ok {
 		sample.ActiveWall = &s.ActiveWall
 		sample.RetryBackoff = &s.RetryBackoff
 		sample.RetryAttempts = &s.RetryAttempts
