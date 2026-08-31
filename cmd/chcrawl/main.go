@@ -85,29 +85,32 @@ Flags:
 	}
 
 	var (
-		concurrency     = fs.Int("concurrency", 10, "global concurrent worker count")
-		perHost         = fs.Int("per-host-concurrency", 4, "max concurrent in-flight requests per host")
-		maxPages        = fs.Int("max-pages", 100, "stop after this many successfully parsed pages (0 = unbounded)")
-		maxDepth        = fs.Int("max-depth", 3, "maximum BFS depth from the seed URL")
-		maxDuration     = fs.Duration("max-duration", 0, "stop after this long (0 = unbounded)")
-		maxFrontierSize = fs.Int("max-frontier-size", 100_000, "bounded frontier capacity (backpressure kicks in above this)")
-		maxBodyBytes    = fs.Int64("max-body-bytes", 10*1024*1024, "per-response body size cap in bytes")
-		maxRedirects    = fs.Int("max-redirects", 20, "maximum redirect hops to follow per request")
-		timeout         = fs.Duration("timeout", 15*time.Second, "per-request timeout")
-		delay           = fs.Duration("delay", 0, "fixed delay applied before every request (0 = none)")
-		sameOrigin      = fs.Bool("same-origin", true, "restrict crawl to the seed URL's origin")
-		insecure        = fs.Bool("insecure", false, "skip TLS certificate verification")
-		proxy           = fs.String("proxy", "", "HTTP/HTTPS proxy URL")
-		cookies         = fs.String("cookies", "", "cookie header string, e.g. 'a=1; b=2'")
-		exclude         = fs.String("exclude", "", "comma-separated regex patterns to exclude")
-		legacy          = fs.Bool("legacy-mode", false, "use simpler legacy normalization/budget/retry behavior")
-		respectRobots   = fs.Bool("respect-robots-txt", false, "honor robots.txt Disallow rules (off by default)")
-		discoverOpenAPI = fs.Bool("discover-openapi", false, "probe canonical OpenAPI/Swagger spec locations against the seed's origin")
-		discoverSitemap = fs.Bool("discover-sitemap", false, "discover the site's XML sitemap (robots.txt Sitemap: or /sitemap.xml) and seed the crawl with its URLs")
-		recoverMaps     = fs.Bool("recover-source-maps", false, "recover original JS source via .js.map files for every JS file crawled")
-		sortQueryParams = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
-		outPath         = fs.String("output", "", "also write the full JSONL record stream to this file")
-		showVersion     = fs.Bool("version", false, "print the version and exit")
+		concurrency       = fs.Int("concurrency", 10, "global concurrent worker count")
+		perHost           = fs.Int("per-host-concurrency", 4, "max concurrent in-flight requests per host")
+		maxPages          = fs.Int("max-pages", 100, "stop after this many successfully parsed pages (0 = unbounded)")
+		maxDepth          = fs.Int("max-depth", 3, "maximum BFS depth from the seed URL")
+		maxDuration       = fs.Duration("max-duration", 0, "stop after this long (0 = unbounded)")
+		maxFrontierSize   = fs.Int("max-frontier-size", 100_000, "bounded frontier capacity (backpressure kicks in above this)")
+		maxBodyBytes      = fs.Int64("max-body-bytes", 10*1024*1024, "per-response body size cap in bytes")
+		maxRedirects      = fs.Int("max-redirects", 20, "maximum redirect hops to follow per request")
+		timeout           = fs.Duration("timeout", 15*time.Second, "per-request timeout")
+		delay             = fs.Duration("delay", 0, "fixed delay applied before every request (0 = none)")
+		sameOrigin        = fs.Bool("same-origin", true, "restrict crawl to the seed URL's origin")
+		insecure          = fs.Bool("insecure", false, "skip TLS certificate verification")
+		proxy             = fs.String("proxy", "", "HTTP/HTTPS proxy URL")
+		cookies           = fs.String("cookies", "", "cookie header string, e.g. 'a=1; b=2'")
+		exclude           = fs.String("exclude", "", "comma-separated regex patterns to exclude")
+		legacy            = fs.Bool("legacy-mode", false, "use simpler legacy normalization/budget/retry behavior")
+		respectRobots     = fs.Bool("respect-robots-txt", false, "honor robots.txt Disallow rules (off by default)")
+		discoverOpenAPI   = fs.Bool("discover-openapi", false, "probe canonical OpenAPI/Swagger spec locations against the seed's origin")
+		discoverSitemap   = fs.Bool("discover-sitemap", false, "discover the site's XML sitemap (robots.txt Sitemap: or /sitemap.xml) and seed the crawl with its URLs")
+		recoverMaps       = fs.Bool("recover-source-maps", false, "recover original JS source via .js.map files for every JS file crawled")
+		renderJS          = fs.Bool("render-js", false, "render pages with a headless browser before extraction (downloads Chromium on first run if none is found; slower than the default fetcher)")
+		renderConcurrency = fs.Int("render-concurrency", 4, "max concurrent browser tabs when -render-js is set")
+		renderTimeout     = fs.Duration("render-timeout", 25*time.Second, "per-page render timeout when -render-js is set")
+		sortQueryParams   = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
+		outPath           = fs.String("output", "", "also write the full JSONL record stream to this file")
+		showVersion       = fs.Bool("version", false, "print the version and exit")
 	)
 	headers := headerFlag{}
 	fs.Var(headers, "header", "extra request header \"Name: Value\" (repeatable)")
@@ -145,6 +148,9 @@ Flags:
 		config.WithDiscoverOpenAPI(*discoverOpenAPI),
 		config.WithDiscoverSitemap(*discoverSitemap),
 		config.WithRecoverSourceMaps(*recoverMaps),
+		config.WithRenderJS(*renderJS),
+		config.WithRenderConcurrency(*renderConcurrency),
+		config.WithRenderTimeout(*renderTimeout),
 	}
 	if len(headers) > 0 {
 		opts = append(opts, config.WithHeaders(headers))
@@ -175,6 +181,7 @@ Flags:
 	if err != nil {
 		return err
 	}
+	defer eng.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

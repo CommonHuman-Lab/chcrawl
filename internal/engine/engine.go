@@ -5,6 +5,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/commonhuman-lab/chcrawl/internal/extract"
 	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/frontier"
+	"github.com/commonhuman-lab/chcrawl/internal/headless"
 	"github.com/commonhuman-lab/chcrawl/internal/normalize"
 	"github.com/commonhuman-lab/chcrawl/internal/output"
 	"github.com/commonhuman-lab/chcrawl/internal/robots"
@@ -34,6 +36,7 @@ type Engine struct {
 	robots         *robots.Checker // nil unless cfg.RespectRobotsTxt
 	openapiFetcher fetch.Fetcher   // nil unless cfg.DiscoverOpenAPI
 	sitemapFetcher fetch.Fetcher   // nil unless cfg.DiscoverSitemap
+	closer         io.Closer       // nil unless cfg.RenderJS (closes the headless browser)
 }
 
 // newAuxFetcher builds an unrestricted fetcher (no content-type allowlist)
@@ -76,6 +79,24 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("engine: building fetcher: %w", err)
+	}
+
+	var closer io.Closer
+	if cfg.RenderJS {
+		hf, err := headless.New(headless.Config{
+			Timeout:            cfg.RenderTimeout,
+			PoolSize:           cfg.RenderConcurrency,
+			Inner:              fetcher,
+			Headers:            cfg.Headers,
+			Cookies:            cfg.Cookies,
+			Proxy:              cfg.Proxy,
+			InsecureSkipVerify: cfg.InsecureSkipVerify,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("engine: building headless fetcher: %w", err)
+		}
+		fetcher = hf
+		closer = hf
 	}
 
 	policies := []scope.Policy{}
@@ -153,6 +174,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		stats:          &Stats{},
 		hosts:          newHostLimiter(cfg.PerHostConcurrency),
 		robots:         robotsChecker,
+		closer:         closer,
 		openapiFetcher: openapiFetcher,
 		sitemapFetcher: sitemapFetcher,
 	}, nil
@@ -233,4 +255,14 @@ func (e *Engine) enqueue(ctx context.Context, pending *sync.WaitGroup, item fron
 	if err := e.frontier.Push(ctx, item); err != nil {
 		pending.Done()
 	}
+}
+
+// Close releases resources held by the engine — currently just the headless
+// browser when RenderJS was used. No-op otherwise. Callers should defer this
+// after a successful New().
+func (e *Engine) Close() error {
+	if e.closer == nil {
+		return nil
+	}
+	return e.closer.Close()
 }

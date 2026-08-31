@@ -57,6 +57,9 @@ go build -o chcrawl ./cmd/chcrawl
 # Enable OpenAPI discovery and source-map recovery
 ./chcrawl -discover-openapi -recover-source-maps https://target.example
 
+# Render pages with a headless browser to catch JS-only routes
+./chcrawl -render-js https://target.example
+
 # Write structured JSONL output
 ./chcrawl -output result.jsonl https://target.example
 ```
@@ -69,6 +72,7 @@ Output is emitted as structured JSONL, with one result or discovery record per l
 `-max-duration`, `-same-origin`, `-exclude`, `-proxy`, `-cookies`,
 `-header` (repeatable), `-delay`, `-insecure`,
 `-respect-robots-txt`, `-discover-openapi`, `-recover-source-maps`,
+`-render-js`, `-render-concurrency`, `-render-timeout`,
 `-legacy-mode`.
 
 `-legacy-mode` enables compatibility behavior using the earlier URL
@@ -86,11 +90,7 @@ chcrawl extracts and resolves URLs from:
 * `<img>`
 * `<iframe>`
 * `<button formaction>`
-* `dataKey flags: `-concurrency`, `-per-host-concurrency`, `-max-pages`,
-`-max-depth`, `-max-duration`, `-same-origin`, `-exclude`, `-proxy`,
-`-cookies`, `-header` (repeatable), `-delay`, `-insecure`,
-`-respect-robots-txt`, `-discover-openapi`, `-recover-source-maps`,
-`-legacy-mode` (switches to simpler normalization/budget/retry behavior).-href`, `data-url`, `data-link`, and `data-action`
+* `data-href`, `data-url`, `data-link`, and `data-action`
 * Meta-refresh redirects
 * `<base href>` declarations
 * A `<code>`-block API-path heuristic
@@ -154,6 +154,27 @@ Recovered source is noise-filtered to reduce irrelevant results:
 * `/vendor/`
 
 Recovered source-map discoveries are emitted as `source_map` records.
+
+### Headless / JS rendering
+
+With `-render-js`, page navigations run through a headless Chromium instead
+of the default plain HTTP fetcher, so routes that only appear after
+client-side JavaScript executes are visible to link/form extraction. Opt-in
+and off by default — it's slower than the default fetcher and pulls in a
+real browser process, so most crawls shouldn't need it.
+
+* Downloads a matching Chromium on first use if none is found (needs
+  outbound network for that one-time download; consider pre-warming the
+  cache on air-gapped hosts)
+* Asset requests (`.js`, `.css`, images, fonts, etc.) still go through the
+  plain fetcher — only actual page navigations spend a browser tab
+* `-render-concurrency` bounds concurrent tabs (default 4, well below
+  `-concurrency`'s default of 10 — tabs are far more expensive than HTTP
+  connections)
+* `-render-timeout` bounds each page's render budget (default 25s)
+* Known v1 limitations: no retry-on-render-failure (unlike the plain
+  fetcher's retry policy), and `redirect_chain` is left empty for
+  headless-fetched pages
 
 ## Crawling and scope control
 

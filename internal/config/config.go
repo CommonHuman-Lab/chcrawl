@@ -34,7 +34,7 @@ type Options struct {
 	MaxFrontierSize    int
 
 	// Crawl bounds.
-	MaxPages                 int // 0 = unbounded
+	MaxPages int // 0 = unbounded
 
 	MaxDepth                 int
 	MaxDuration              time.Duration
@@ -65,6 +65,11 @@ type Options struct {
 	RecoverSourceMaps bool
 	DiscoverOpenAPI   bool
 	DiscoverSitemap   bool
+
+	// Headless rendering.
+	RenderJS          bool
+	RenderConcurrency int
+	RenderTimeout     time.Duration
 }
 
 // Option mutates an Options struct during construction.
@@ -111,6 +116,10 @@ func WithRecoverSourceMaps(b bool) Option { return func(o *Options) { o.RecoverS
 func WithDiscoverOpenAPI(b bool) Option   { return func(o *Options) { o.DiscoverOpenAPI = b } }
 func WithDiscoverSitemap(b bool) Option   { return func(o *Options) { o.DiscoverSitemap = b } }
 
+func WithRenderJS(b bool) Option               { return func(o *Options) { o.RenderJS = b } }
+func WithRenderConcurrency(n int) Option       { return func(o *Options) { o.RenderConcurrency = n } }
+func WithRenderTimeout(d time.Duration) Option { return func(o *Options) { o.RenderTimeout = d } }
+
 // defaults returns an Options populated with chcrawl's default values.
 func defaults() *Options {
 	return &Options{
@@ -130,6 +139,8 @@ func defaults() *Options {
 		AllowedContentTypes:      []string{"html", "javascript", "json", "xml"},
 		RespectRobotsTxt:         false,
 		RetryPolicy:              retry.NewDefault(),
+		RenderConcurrency:        4,
+		RenderTimeout:            25 * time.Second,
 	}
 }
 
@@ -182,6 +193,12 @@ func (o *Options) Validate() error {
 	}
 	if o.MaxFrontierSize < 1 {
 		return fmt.Errorf("config: MaxFrontierSize must be >= 1")
+	}
+	if o.RenderJS && o.RenderConcurrency < 1 {
+		return fmt.Errorf("config: RenderConcurrency must be >= 1 when RenderJS is set")
+	}
+	if o.RenderJS && o.RenderTimeout <= 0 {
+		return fmt.Errorf("config: RenderTimeout must be > 0 when RenderJS is set")
 	}
 	return nil
 }
