@@ -14,7 +14,7 @@ Part of the CommonHuman-Lab toolkit.
 Traditional crawlers often focus primarily on HTML links. chcrawl is designed to go further, combining correctness-focused crawling with deep discovery capabilities useful during authorized reconnaissance and penetration testing.
 
 * **Correctness-first crawling** — predictable URL normalization, scope enforcement, redirect handling, retry behavior, and crawl-budget management.
-* **Deep discovery** — HTML links, forms, JavaScript endpoints, WebSockets, OpenAPI specifications, and source maps.
+* **Deep discovery** — HTML links, forms, JavaScript endpoints, WebSockets, OpenAPI specifications, source maps, and optional headless-browser rendering for routes that only appear after client-side JavaScript runs.
 * **Security workflow focused** — authentication helpers and discovery features designed for authorized application testing.
 * **Controlled concurrency** — global and per-host concurrency limits, delays, configurable retry/backoff behavior, and crawl budgets.
 * **Structured output** — JSONL records designed for pipelines, automation, and post-processing.
