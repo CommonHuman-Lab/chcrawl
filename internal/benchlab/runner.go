@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
-	"github.com/commonhuman-lab/chcrawl/internal/engine"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/engine"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 // RunOptions controls how a workload is executed. Defaults are generous

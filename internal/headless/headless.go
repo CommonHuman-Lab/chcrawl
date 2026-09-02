@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 func TestFetch_RendersJSInjectedContent(t *testing.T) {

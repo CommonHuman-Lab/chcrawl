@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 type rule struct {

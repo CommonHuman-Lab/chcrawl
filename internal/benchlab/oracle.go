@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/config"
 	"github.com/commonhuman-lab/chcrawl/internal/normalize"
 )
 

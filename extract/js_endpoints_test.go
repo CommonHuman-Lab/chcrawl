@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 func extractJS(t *testing.T, src, base string, ex Extractor) []Discovery {

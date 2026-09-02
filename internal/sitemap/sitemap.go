@@ -14,7 +14,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 const maxSitemapBytes = 8 * 1024 * 1024 // 8 MiB

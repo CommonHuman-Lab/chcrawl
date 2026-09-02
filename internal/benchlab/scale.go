@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/config"
 )
 
 // ScaleWorkload is one concrete, parameterized instance of a large-scale

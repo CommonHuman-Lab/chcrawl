@@ -10,16 +10,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/extract"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/dedup"
-	"github.com/commonhuman-lab/chcrawl/internal/extract"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/frontier"
 	"github.com/commonhuman-lab/chcrawl/internal/headless"
 	"github.com/commonhuman-lab/chcrawl/internal/normalize"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
 	"github.com/commonhuman-lab/chcrawl/internal/robots"
 	"github.com/commonhuman-lab/chcrawl/internal/scope"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 type Engine struct {

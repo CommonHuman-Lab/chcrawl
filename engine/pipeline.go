@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/extract"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/extract"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/frontier"
 	"github.com/commonhuman-lab/chcrawl/internal/normalize"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/output"
 	"golang.org/x/net/html"
 )
 

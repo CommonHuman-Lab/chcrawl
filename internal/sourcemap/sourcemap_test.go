@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 func newTestFetcher(t *testing.T) fetch.Fetcher {

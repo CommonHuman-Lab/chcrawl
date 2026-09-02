@@ -4,9 +4,9 @@ package output
 import (
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/extract"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
-	"github.com/commonhuman-lab/chcrawl/internal/openapi"
+	"github.com/commonhuman-lab/chcrawl/extract"
+	"github.com/commonhuman-lab/chcrawl/fetch"
+	"github.com/commonhuman-lab/chcrawl/openapi"
 )
 
 // PageEvent records one successfully fetched and parsed page.

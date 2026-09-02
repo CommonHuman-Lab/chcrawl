@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/config"
 )
 
 // URL canonicalizes u according to mode. It always strips the fragment.

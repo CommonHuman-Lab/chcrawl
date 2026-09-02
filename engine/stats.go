@@ -4,7 +4,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 // Stats holds the atomic counters that back the final SummaryEvent. Every

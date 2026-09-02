@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
-	"github.com/commonhuman-lab/chcrawl/internal/engine"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/engine"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 const version = "0.1.0"
@@ -109,7 +109,7 @@ Flags:
 		renderConcurrency = fs.Int("render-concurrency", 4, "max concurrent browser tabs when -render-js is set")
 		renderTimeout     = fs.Duration("render-timeout", 25*time.Second, "per-page render timeout when -render-js is set")
 		sortQueryParams   = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
-		outPath           = fs.String("output", "", "also write the full JSONL record stream to this file")
+		outPath           = fs.String("output", "", "also write the full JSONL record stream to this file, or to stdout (in place of the human summary) if the path is \"-\"")
 		showVersion       = fs.Bool("version", false, "print the version and exit")
 	)
 	headers := headerFlag{}
@@ -167,14 +167,22 @@ Flags:
 		return err
 	}
 
-	var writer output.EventWriter = output.NewHumanWriter(os.Stdout, 10)
-	if *outPath != "" {
+	var writer output.EventWriter
+	switch {
+	case *outPath == "-":
+		// Pure JSONL to stdout, no human summary — this is the stream a
+		// downstream consumer (e.g. `chcrawl ... -output - | breachsql
+		// --stdin`) parses, so it can't be mixed with human-readable text.
+		writer = output.NewWriter(os.Stdout)
+	case *outPath != "":
 		f, err := os.Create(*outPath)
 		if err != nil {
 			return err
 		}
 		defer f.Close()
-		writer = output.NewMultiWriter(writer, output.NewWriter(f))
+		writer = output.NewMultiWriter(output.NewHumanWriter(os.Stdout, 10), output.NewWriter(f))
+	default:
+		writer = output.NewHumanWriter(os.Stdout, 10)
 	}
 
 	eng, err := engine.New(cfg, writer)

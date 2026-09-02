@@ -3,7 +3,7 @@ package normalize
 import (
 	"testing"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
+	"github.com/commonhuman-lab/chcrawl/config"
 )
 
 func TestURL_LegacyMode_SimpleNormalization(t *testing.T) {

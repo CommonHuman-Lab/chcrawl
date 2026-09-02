@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"gopkg.in/yaml.v3"
 )
 

@@ -3,8 +3,8 @@ package engine
 import (
 	"context"
 
-	"github.com/commonhuman-lab/chcrawl/internal/openapi"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/openapi"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 // discoverOpenAPI runs a one-shot OpenAPI/Swagger discovery probe against

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 // These patterns match an absolute wss?:// literal (optionally inside a

@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"golang.org/x/net/html"
 )
 

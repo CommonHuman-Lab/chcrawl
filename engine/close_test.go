@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 func TestEngine_CloseIsNoopWithoutRenderJS(t *testing.T) {

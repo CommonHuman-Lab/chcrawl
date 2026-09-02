@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"github.com/commonhuman-lab/chcrawl/internal/sitemap"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 // TestSitemapSeeding_CrawlsRoutesInvisibleInHTML verifies the core value

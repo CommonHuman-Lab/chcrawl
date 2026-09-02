@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/extract"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/extract"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 func representativePageEvent() PageEvent {

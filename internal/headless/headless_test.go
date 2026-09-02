@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
 type fakeFetcher struct {

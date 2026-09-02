@@ -7,8 +7,8 @@ import (
 
 	"github.com/commonhuman-lab/chcrawl/internal/frontier"
 	"github.com/commonhuman-lab/chcrawl/internal/normalize"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
 	"github.com/commonhuman-lab/chcrawl/internal/sitemap"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 // seedSitemap discovers the site's XML sitemap(s) and injects their <loc>

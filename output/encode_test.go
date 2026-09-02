@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/extract"
-	"github.com/commonhuman-lab/chcrawl/internal/fetch"
-	"github.com/commonhuman-lab/chcrawl/internal/openapi"
+	"github.com/commonhuman-lab/chcrawl/extract"
+	"github.com/commonhuman-lab/chcrawl/fetch"
+	"github.com/commonhuman-lab/chcrawl/openapi"
 )
 
 func mustMarshalJSON(t *testing.T, v any) []byte {

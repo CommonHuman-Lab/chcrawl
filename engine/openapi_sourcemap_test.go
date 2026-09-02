@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/commonhuman-lab/chcrawl/internal/config"
-	"github.com/commonhuman-lab/chcrawl/internal/output"
+	"github.com/commonhuman-lab/chcrawl/config"
+	"github.com/commonhuman-lab/chcrawl/output"
 )
 
 func TestCrawl_DiscoverOpenAPI_WritesOpenAPIEvent(t *testing.T) {
