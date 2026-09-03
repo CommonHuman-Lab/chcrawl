@@ -14,17 +14,14 @@ type Decision struct {
 	Delay time.Duration
 }
 
-// Policy decides whether to retry a failed or rate-limited fetch attempt.
-// attempt is 0-indexed (0 = deciding whether to make the first retry, i.e.
-// the second overall attempt). statusCode is 0 when err is non-nil (a
-// transport-level failure rather than an HTTP response).
+// Policy decides whether to retry a failed or rate-limited fetch attempt. attempt is 0-indexed;
+// statusCode is 0 when err is non-nil (a transport-level failure rather than an HTTP response).
 type Policy interface {
 	Next(attempt int, statusCode int, retryAfter string, err error) Decision
 }
 
-// Default is an exponential-backoff-with-jitter policy that retries
-// transport errors and a configurable set of HTTP statuses (429 and 5xx by
-// default), since a 5xx is often transient.
+// Default is an exponential-backoff-with-jitter policy that retries transport errors and a
+// configurable set of HTTP statuses (429 and 5xx by default, since a 5xx is often transient).
 type Default struct {
 	MaxRetries      int
 	BaseDelay       time.Duration
@@ -32,9 +29,8 @@ type Default struct {
 	RetryableStatus map[int]bool
 }
 
-// NewDefault returns the Default policy with sane defaults: 3 retries,
-// exponential backoff from 500ms up to 30s with full jitter, retrying 429
-// and all 5xx statuses.
+// NewDefault returns the Default policy with sane defaults: 3 retries, exponential backoff from
+// 500ms up to 30s with full jitter, retrying 429 and all 5xx statuses.
 func NewDefault() *Default {
 	return &Default{
 		MaxRetries: 3,
@@ -66,15 +62,13 @@ func (d *Default) Next(attempt int, statusCode int, retryAfter string, err error
 	return Decision{Retry: true, Delay: delay}
 }
 
-// Legacy is a simpler, flat-backoff retry policy: 429-only, no exponential
-// backoff, with a Retry-After floor. Not used by default.
+// Legacy is a simpler, flat-backoff retry policy: 429-only, with a Retry-After floor. Not used by default.
 type Legacy struct {
 	MaxRetries int
 	FlatDelay  time.Duration
 }
 
-// NewLegacy returns the Legacy policy with its default constants: 2
-// retries, 5.0s flat backoff floor.
+// NewLegacy returns the Legacy policy with its default constants: 2 retries, 5.0s flat backoff floor.
 func NewLegacy() *Legacy {
 	return &Legacy{MaxRetries: 2, FlatDelay: 5 * time.Second}
 }

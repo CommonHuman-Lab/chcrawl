@@ -1,7 +1,5 @@
-// Package headless provides a browser-backed fetch.Fetcher for JS-rendering
-// crawls, opt-in via -render-js. Asset requests (JS/CSS/images/etc.) are
-// delegated to a plain HTTP fetcher; only likely-HTML navigations spend a
-// pooled browser tab.
+// Package headless provides a browser-backed fetch.Fetcher for JS-rendering crawls (opt-in via
+// -render-js); asset requests are delegated to a plain HTTP fetcher, saving the pooled tabs for HTML.
 package headless
 
 import (
@@ -34,8 +32,7 @@ type Fetcher struct {
 	headers []string
 }
 
-// New launches a browser (downloading a matching Chromium first if none is
-// found on the system) and returns a Fetcher ready to use.
+// New launches a browser (downloading a matching Chromium first if none is found) and returns a Fetcher ready to use.
 func New(cfg Config) (*Fetcher, error) {
 	if cfg.Inner == nil {
 		return nil, fmt.Errorf("headless: Config.Inner is required")

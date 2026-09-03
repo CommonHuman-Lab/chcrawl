@@ -1,10 +1,8 @@
 package output
 
-// appendJSONString and the htmlSafeSet/hexDigit tables below are adapted
-// from Go's encoding/json (BSD-3-Clause, part of the Go toolchain this
-// binary is built with) — not an external dependency, copied verbatim for
-// byte-exact compatibility with json.Marshal's default (HTML-escaping)
-// output. See go1.26.5 src/encoding/json/{encode,tables}.go.
+// appendJSONString and the htmlSafeSet/hexDigit tables are adapted from Go's encoding/json
+// (BSD-3-Clause) for byte-exact compatibility with json.Marshal's default HTML-escaping output.
+// See go1.26.5 src/encoding/json/{encode,tables}.go.
 
 import (
 	"fmt"
@@ -21,10 +19,8 @@ import (
 
 const hexDigit = "0123456789abcdef"
 
-// htmlSafeSet holds true for every ASCII byte that can appear unescaped
-// inside a JSON string produced with HTML-escaping enabled (the default
-// json.NewEncoder behavior, which this package must match). False for the
-// ASCII control characters (0-31), '"', '\\', '<', '>', and '&'. Note that
+// htmlSafeSet holds true for every ASCII byte that can appear unescaped in an HTML-escaped JSON
+// string (json.NewEncoder's default). False for control chars (0-31), '"', '\\', '<', '>', '&'.
 // DEL (0x7f) is true — it is NOT escaped by the default encoder.
 var htmlSafeSet = [utf8.RuneSelf]bool{
 	' ':  true,
@@ -125,11 +121,9 @@ var htmlSafeSet = [utf8.RuneSelf]bool{
 	'':  true,
 }
 
-// appendJSONString appends s to dst as a double-quoted JSON string, using
-// exactly the escaping rules of encoding/json's default encoder
-// (SetEscapeHTML(true), which json.NewEncoder always uses): standard JSON
-// escapes, \u00XX for other control bytes, � substitution for invalid
-// UTF-8, and HTML-escaping of <, >, and &, plus U+2028/U+2029.
+// appendJSONString appends s to dst as a double-quoted JSON string, matching encoding/json's
+// default (SetEscapeHTML(true)) encoder exactly: standard escapes, \u00XX for control bytes,
+// � for invalid UTF-8, and HTML-escaping of <, >, &, plus U+2028/U+2029.
 func appendJSONString(dst []byte, s string) []byte {
 	dst = append(dst, '"')
 	start := 0
@@ -168,8 +162,7 @@ func appendJSONString(dst []byte, s string) []byte {
 			start = i
 			continue
 		}
-		// U+2028 LINE SEPARATOR, U+2029 PARAGRAPH SEPARATOR: valid in JSON
-		// but not in JSONP; encoding/json escapes them unconditionally.
+		// U+2028/U+2029: valid in JSON but not JSONP; encoding/json escapes them unconditionally.
 		if c == ' ' || c == ' ' {
 			dst = append(dst, s[start:i]...)
 			dst = append(dst, '\\', 'u', '2', '0', '2', hexDigit[c&0xF])
@@ -184,11 +177,7 @@ func appendJSONString(dst []byte, s string) []byte {
 	return dst
 }
 
-// --- scalar encoders ---
-//
-// These append directly via strconv's Append* family (no fmt.Sprintf, no
-// reflection) so the numeric/bool fast path pays nothing beyond what a
-// hand-rolled encoder needs to.
+// --- scalar encoders: append via strconv's Append* family (no fmt.Sprintf, no reflection) ---
 
 func appendJSONInt(dst []byte, v int) []byte {
 	return strconv.AppendInt(dst, int64(v), 10)
@@ -206,9 +195,8 @@ func appendJSONBool(dst []byte, v bool) []byte {
 	return strconv.AppendBool(dst, v)
 }
 
-// appendJSONFloat64 ports encoding/json's floatEncoder algorithm (the
-// 'f'/'e' format cutoff and the e-09->e-9 exponent trim) so output matches
-// json.Marshal exactly. Returns an error for NaN/Inf, as json.Marshal does.
+// appendJSONFloat64 ports encoding/json's floatEncoder algorithm so output matches json.Marshal
+// exactly, including the 'f'/'e' cutoff and e-09->e-9 exponent trim. Errors on NaN/Inf like json.Marshal.
 func appendJSONFloat64(dst []byte, f float64) ([]byte, error) {
 	if math.IsInf(f, 0) || math.IsNaN(f) {
 		return dst, fmt.Errorf("json: unsupported value: %s", strconv.FormatFloat(f, 'g', -1, 64))
@@ -228,8 +216,7 @@ func appendJSONFloat64(dst []byte, f float64) ([]byte, error) {
 	return dst, nil
 }
 
-// appendJSONTime delegates to time.Time's own MarshalJSON (a concrete-type
-// method call, not reflection) rather than reimplementing RFC3339Nano
+// appendJSONTime delegates to time.Time's own MarshalJSON rather than reimplementing RFC3339Nano
 // formatting and its edge cases (e.g. years outside [0,9999]).
 func appendJSONTime(dst []byte, t time.Time) ([]byte, error) {
 	b, err := t.MarshalJSON()
@@ -239,13 +226,8 @@ func appendJSONTime(dst []byte, t time.Time) ([]byte, error) {
 	return append(dst, b...), nil
 }
 
-// --- string slice / string map encoders ---
-//
-// Every slice/map field encoded here has no omitempty tag on its own type
-// (RedirectHop, Param, Discovery, Endpoint carry no json tags at all), so a
-// nil value must marshal to "null" and a non-nil empty value to "[]"/"{}" —
-// collapsing that distinction is the most common way a hand-rolled encoder
-// silently diverges from encoding/json.
+// --- string slice / string map encoders: nil must marshal to "null", non-nil empty to "[]"/"{}" ---
+// (collapsing that distinction is the most common way a hand-rolled encoder diverges from encoding/json)
 
 func appendJSONStringSlice(dst []byte, s []string) []byte {
 	if s == nil {
@@ -282,14 +264,9 @@ func appendJSONStringMap(dst []byte, m map[string]string) []byte {
 	return append(dst, '}')
 }
 
-// --- nested cross-package type encoders ---
-//
-// fetch.RedirectHop, extract.Param, extract.Discovery, and openapi.Endpoint
-// carry no json tags, so encoding/json marshals them under their literal Go
-// field names. All fields on these types are always emitted (no omitempty
-// anywhere here) — this package encodes them directly instead of adding
-// AppendJSON methods to those packages, since internal/output is the only
-// consumer that needs a JSON representation of them.
+// --- nested cross-package type encoders: fetch/extract/openapi types carry no json tags, so ---
+// their literal Go field names are marshaled here directly rather than adding AppendJSON methods
+// to those packages, since this package is the only consumer that needs a JSON representation.
 
 func appendRedirectHopJSON(dst []byte, h *fetch.RedirectHop) []byte {
 	dst = append(dst, `{"URL":`...)
@@ -395,12 +372,9 @@ func appendEndpointSliceJSON(dst []byte, endpoints []openapi.Endpoint) []byte {
 	return append(dst, ']')
 }
 
-// --- top-level event encoders ---
-//
-// One per Writer method. Only PageEvent (time.Time) and SummaryEvent
-// (float64, which can be NaN/Inf) can fail; ErrorEvent and OpenAPIEvent
-// return plain []byte since nothing in their transitive field set is
-// fallible.
+// --- top-level event encoders, one per Writer method: only PageEvent and SummaryEvent (time.Time ---
+// and float64 fields) can fail; ErrorEvent and OpenAPIEvent return plain []byte since nothing in
+// their transitive field set is fallible.
 
 func appendPageEventJSON(dst []byte, e *PageEvent) ([]byte, error) {
 	dst = append(dst, `{"type":`...)

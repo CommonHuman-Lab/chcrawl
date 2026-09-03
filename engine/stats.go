@@ -7,9 +7,8 @@ import (
 	"github.com/commonhuman-lab/chcrawl/output"
 )
 
-// Stats holds the atomic counters that back the final SummaryEvent. Every
-// field is updated at exactly one well-defined pipeline point (see
-// pipeline.go) so the numbers stay consistent under concurrent workers.
+// Stats holds the atomic counters behind the final SummaryEvent; each field is updated at exactly
+// one point in pipeline.go, so the numbers stay consistent under concurrent workers.
 type Stats struct {
 	urlsDiscovered      atomic.Int64
 	urlsUnique          atomic.Int64

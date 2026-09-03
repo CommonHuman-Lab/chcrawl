@@ -10,15 +10,13 @@ import (
 	"golang.org/x/net/html"
 )
 
-// codePathRe mines API-doc-style paths (e.g. "/rest/basket/:bid",
-// "/api/Products/{id}") out of <code> block text — a deliberate, tested
-// discovery channel, not a throwaway heuristic.
+// codePathRe mines API-doc-style paths (e.g. "/rest/basket/:bid", "/api/Products/{id}") out of
+// <code> block text — a deliberate, tested discovery channel, not a throwaway heuristic.
 var codePathRe = regexp.MustCompile(`^(/(?:[A-Za-z0-9_\-]+/){2,}(?:[A-Za-z0-9_\-]+|\{[^}]+\}|:[A-Za-z][A-Za-z0-9_]*)(?:\?[^\s"'<>]*)?)`)
 
 var skipHrefPrefixes = []string{"javascript:", "mailto:", "#"}
 
-// linkMeta are Discovery.Meta values for LinkExtractor's fixed set of
-// "source" tags. Shared read-only across every discovery of a given kind
+// linkMeta are Discovery.Meta values for LinkExtractor's fixed "source" tags, shared read-only.
 var (
 	metaAHref            = map[string]string{"source": "a_href"}
 	metaLinkHref         = map[string]string{"source": "link_href"}
@@ -45,9 +43,8 @@ func skippableHref(v string) bool {
 	return false
 }
 
-// LinkExtractor finds crawlable links from HTML markup: anchors, form
-// buttons, common asset tags, SPA data-* attributes, meta-refresh, and the
-// <code>-block API-path heuristic.
+// LinkExtractor finds crawlable links from HTML markup: anchors, form buttons, common asset tags,
+// SPA data-* attributes, meta-refresh, and the <code>-block API-path heuristic.
 type LinkExtractor struct{}
 
 func (LinkExtractor) Name() string { return "html_links" }
@@ -125,12 +122,8 @@ func (LinkExtractor) Extract(ctx context.Context, in Input) ([]Discovery, error)
 	return out, nil
 }
 
-// extractCodePaths builds absolute URLs by direct string concatenation of
-// scheme+host with the matched path, rather than round-tripping through
-// net/url's parser/serializer: that would percent-encode literal "{"/"}"
-// characters in REST placeholder paths like "/api/x/{id}". Preserving the
-// exact matched text is what makes this heuristic useful as a discovery
-// hint in the first place.
+// extractCodePaths concatenates scheme+host with the matched path directly rather than through
+// net/url, which would percent-encode literal "{"/"}" in REST placeholder paths like "/api/x/{id}".
 func extractCodePaths(codeNode *html.Node, base *url.URL) []Discovery {
 	var out []Discovery
 	var collect func(n *html.Node)

@@ -5,15 +5,12 @@ import "sync"
 
 // VisitedSet tracks which normalized URL keys have already been seen.
 type VisitedSet interface {
-	// MarkIfNew atomically checks-and-inserts key. It returns true if this
-	// is the first time key has been seen, in which case the caller should
-	// proceed (e.g. enqueue the URL); false means it's a duplicate.
+	// MarkIfNew atomically checks-and-inserts key, returning true the first time key is seen.
 	MarkIfNew(key string) bool
 	Len() int
 }
 
-// shardedSet is a VisitedSet backed by sharded maps, each guarded by its
-// own mutex, to reduce lock contention under highly concurrent workloads.
+// shardedSet is a VisitedSet backed by sharded maps to reduce lock contention under high concurrency.
 type shardedSet struct {
 	shards [numShards]shard
 }

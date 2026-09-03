@@ -1,10 +1,6 @@
-// Package sitemap discovers and parses XML sitemaps for seed enrichment.
-//
-// When a site publishes a sitemap (linked from robots.txt or at the
-// conventional /sitemap.xml location), its <loc> URLs are injected into the
-// crawl frontier as additional seeds. This gives crawlers full route
-// coverage on client-rendered SPAs where links are invisible to static
-// HTML parsing.
+// Package sitemap discovers and parses XML sitemaps for seed enrichment: their <loc> URLs are
+// injected into the crawl frontier as additional seeds, giving route coverage on client-rendered
+// SPAs that static HTML parsing would otherwise miss.
 package sitemap
 
 import (
@@ -25,11 +21,9 @@ type Location struct {
 	URL string
 }
 
-// sitemapDoc handles both <urlset> (url entries) and <sitemapindex> (nested
-// sitemap refs) with a single struct. Whether a document is an index is
-// decided by its root element name (XMLName), not by which child slice
-// ended up populated — a malformed document containing both <url> and
-// <sitemap> children must not have its <url> entries silently dropped.
+// sitemapDoc handles both <urlset> and <sitemapindex> with one struct. Whether a document is an
+// index is decided by its root element name (XMLName), not by which child slice got populated —
+// a malformed document with both <url> and <sitemap> children mustn't have <url> silently dropped.
 type sitemapDoc struct {
 	XMLName xml.Name
 	URLs    []sitemapEntry `xml:"url"`
@@ -45,18 +39,10 @@ type Fetcher interface {
 	Fetch(ctx context.Context, req fetch.Request) (*fetch.Response, error)
 }
 
-// Discover finds the site's sitemap(s) and returns their <loc> URLs.
-//
-// Discovery order:
-//  1. Sitemap: directives in robots.txt (authoritative if present)
-//  2. /sitemap.xml at the origin
-//
-// A sitemap index is expanded one level (up to maxSitemapDocs children).
-// limit caps the number of locations returned (0 = unbounded); once it's
-// reached, no further sitemap documents are fetched. This keeps the caller
-// from paying for (and blocking on) documents whose entries it will just
-// discard.
-// Returns (nil, nil) when no sitemap exists — that is not an error.
+// Discover finds the site's sitemap(s) — preferring robots.txt Sitemap: directives, falling back
+// to /sitemap.xml — and returns their <loc> URLs, expanding a sitemap index one level (up to
+// maxSitemapDocs children). limit caps locations returned (0 = unbounded); once reached, no
+// further documents are fetched. Returns (nil, nil), not an error, when no sitemap exists.
 func Discover(ctx context.Context, f Fetcher, origin string, limit int) ([]Location, error) {
 	origin = strings.TrimRight(origin, "/")
 

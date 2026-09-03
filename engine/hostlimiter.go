@@ -6,8 +6,7 @@ import (
 	"sync/atomic"
 )
 
-// hostLimiter gates concurrent in-flight fetches per host, created lazily
-// on first sight of a host.
+// hostLimiter gates concurrent in-flight fetches per host, created lazily on first sight of a host.
 type hostLimiter struct {
 	perHost int
 	mu      sync.Mutex
@@ -49,13 +48,9 @@ func (h *hostLimiter) Release(host string) {
 	}
 }
 
-// hostGate adapts a hostLimiter slot to fetch.HostGate, letting Fetch
-// release and reacquire the slot around a retry's backoff sleep instead of
-// holding it for the sleep's full duration. held tracks whether the slot is
-// currently ours so Release is always safe to call — including from
-// pipeline.go's own unconditional release-on-exit — even after a failed
-// reacquire (e.g. context cancelled during backoff) already left the slot
-// unheld.
+// hostGate adapts a hostLimiter slot to fetch.HostGate, letting Fetch release and reacquire the
+// slot around a retry's backoff sleep instead of holding it for the sleep's full duration. held
+// makes Release always safe to call, even after a failed reacquire already left the slot unheld.
 type hostGate struct {
 	hosts *hostLimiter
 	host  string

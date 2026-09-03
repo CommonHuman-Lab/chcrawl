@@ -9,12 +9,9 @@ import (
 	"github.com/commonhuman-lab/chcrawl/config"
 )
 
-// URL canonicalizes u according to mode. It always strips the fragment.
-//
-// StrictMode additionally strips default ports (":80" on http, ":443" on
-// https) and lowercases percent-encoding hex digits. LegacyMode applies a
-// simpler normalization: lowercase scheme+host, strip trailing slash (root
-// pinned to "/"), strip fragment, query string left untouched.
+// URL canonicalizes u according to mode; it always strips the fragment. StrictMode additionally
+// strips default ports and lowercases percent-encoding hex digits; LegacyMode just lowercases
+// scheme+host and strips the trailing slash (root pinned to "/"), leaving the query untouched.
 func URL(raw string, mode config.CanonicalizationMode, sortQuery bool) string {
 	p, err := url.Parse(raw)
 	if err != nil {

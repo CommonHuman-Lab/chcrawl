@@ -1,5 +1,4 @@
-// Package auth builds the cookies/headers needed to crawl an
-// authenticated target: form login, OAuth2 bearer login, and HTTP Basic.
+// Package auth builds cookies/headers for authenticated crawls: form login, OAuth2 bearer login, and HTTP Basic.
 package auth
 
 import (
@@ -15,8 +14,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Result is a portable credentials bag: cookies and headers a caller merges
-// into subsequent crawl requests.
+// Result is a portable credentials bag a caller merges into subsequent crawl requests.
 type Result struct {
 	Cookies string
 	Headers map[string]string
@@ -26,11 +24,9 @@ func (r Result) IsEmpty() bool {
 	return r.Cookies == "" && len(r.Headers) == 0
 }
 
-// FormLogin fetches loginURL, extracts the first form's hidden fields
-// (including any CSRF token), submits username/password plus those hidden
-// fields, and returns the resulting session cookies. If the login response
-// is JSON containing a token/access_token/jwt/id_token field, an
-// Authorization: Bearer header is also populated.
+// FormLogin submits loginURL's form (username/password plus any hidden fields, e.g. a CSRF
+// token) and returns the resulting session cookies, plus an Authorization: Bearer header if the
+// response is JSON with a token/access_token/jwt/id_token field.
 func FormLogin(ctx context.Context, fetcher fetch.Fetcher, loginURL, usernameField, username, passwordField, password string, extraFields map[string]string) (Result, error) {
 	getResp, err := fetcher.Fetch(ctx, fetch.Request{URL: loginURL, Method: "GET"})
 	if err != nil {
@@ -66,8 +62,10 @@ func FormLogin(ctx context.Context, fetcher fetch.Fetcher, loginURL, usernameFie
 	}
 
 	result := Result{Headers: map[string]string{}}
-	if setCookie := postResp.Headers.Get("Set-Cookie"); setCookie != "" {
-		result.Cookies = setCookie
+	// Read from the jar, not the raw Set-Cookie header: a login POST usually redirects, and the
+	// final hop rarely re-sends the cookie the redirect's own 302 just set.
+	if postResp.Cookies != "" {
+		result.Cookies = postResp.Cookies
 	}
 	if token, ok := extractTokenFromJSON(postResp.Body); ok {
 		result.Headers["Authorization"] = "Bearer " + token
@@ -75,8 +73,7 @@ func FormLogin(ctx context.Context, fetcher fetch.Fetcher, loginURL, usernameFie
 	return result, nil
 }
 
-// BearerLogin performs an OAuth2 client-credentials (or other grant) POST
-// and returns an Authorization: Bearer header from the JSON response.
+// BearerLogin performs an OAuth2 grant POST and returns an Authorization: Bearer header from the JSON response.
 func BearerLogin(ctx context.Context, fetcher fetch.Fetcher, tokenURL, clientID, clientSecret, grantType string) (Result, error) {
 	if grantType == "" {
 		grantType = "client_credentials"
@@ -102,9 +99,7 @@ func BearerLogin(ctx context.Context, fetcher fetch.Fetcher, tokenURL, clientID,
 	return Result{Headers: map[string]string{"Authorization": "Bearer " + token}}, nil
 }
 
-// BasicAuthHeader builds an HTTP Basic Authorization header for
-// "user:password" credentials. The password portion may itself contain
-// colons; only the first colon splits user from password.
+// BasicAuthHeader builds an HTTP Basic header for "user:password" (only the first colon splits).
 func BasicAuthHeader(cred string) (map[string]string, error) {
 	i := strings.IndexByte(cred, ':')
 	if i < 0 {

@@ -12,8 +12,7 @@ type EventWriter interface {
 	WriteOpenAPI(OpenAPIEvent) error
 }
 
-// Writer streams JSONL records to an underlying io.Writer, safe for
-// concurrent use by multiple crawl workers.
+// Writer streams JSONL records to an underlying io.Writer, safe for concurrent use by multiple crawl workers.
 type Writer struct {
 	mu  sync.Mutex
 	out io.Writer
@@ -23,9 +22,8 @@ func NewWriter(w io.Writer) *Writer {
 	return &Writer{out: w}
 }
 
-// bufPool holds *[]byte (a pointer, not a slice value) so that Put never
-// itself allocates by boxing a slice header into the pool's any. 512 bytes
-// covers a typical PageEvent line without regrowth.
+// bufPool holds *[]byte, not a slice value, so Put never itself allocates by boxing a slice
+// header into the pool's any. 512 bytes covers a typical PageEvent line without regrowth.
 var bufPool = sync.Pool{
 	New: func() any {
 		b := make([]byte, 0, 512)
@@ -77,9 +75,8 @@ func (w *Writer) WriteOpenAPI(e OpenAPIEvent) error {
 	return w.flush(b)
 }
 
-// flush is the only code that touches w.out, guarded by w.mu. Encoding
-// always happens before this call, preserving the invariant that JSON
-// encoding never happens inside the critical section.
+// flush is the only code that touches w.out, guarded by w.mu; encoding always happens before this
+// call, so JSON encoding never happens inside the critical section.
 func (w *Writer) flush(b []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

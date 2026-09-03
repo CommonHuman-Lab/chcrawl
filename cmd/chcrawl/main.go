@@ -11,8 +11,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/commonhuman-lab/chcrawl/auth"
 	"github.com/commonhuman-lab/chcrawl/config"
 	"github.com/commonhuman-lab/chcrawl/engine"
+	"github.com/commonhuman-lab/chcrawl/fetch"
 	"github.com/commonhuman-lab/chcrawl/output"
 )
 
@@ -37,6 +39,27 @@ func (h headerFlag) Set(v string) error {
 	}
 	h[strings.TrimSpace(name)] = strings.TrimSpace(value)
 	return nil
+}
+
+// newAuthFetcher builds a throwaway fetcher for a login round-trip. MaxBodyBytes must be passed
+// explicitly: fetch.Fetcher treats a zero value as a 1-byte cap, truncating the login response.
+func newAuthFetcher(timeout time.Duration, proxy string, insecure bool, maxBodyBytes int64) (fetch.Fetcher, error) {
+	return fetch.New(fetch.Config{
+		Timeout:            timeout,
+		Proxy:              proxy,
+		InsecureSkipVerify: insecure,
+		MaxBodyBytes:       maxBodyBytes,
+	})
+}
+
+func boolCount(bs ...bool) int {
+	n := 0
+	for _, b := range bs {
+		if b {
+			n++
+		}
+	}
+	return n
 }
 
 func reorderArgs(fs *flag.FlagSet, args []string) []string {
@@ -96,10 +119,14 @@ Flags:
 		timeout           = fs.Duration("timeout", 15*time.Second, "per-request timeout")
 		delay             = fs.Duration("delay", 0, "fixed delay applied before every request (0 = none)")
 		sameOrigin        = fs.Bool("same-origin", true, "restrict crawl to the seed URL's origin")
+		includeSubdomains = fs.Bool("include-subdomains", false, "allow any subdomain of the seed URL's root domain, in addition to the seed's own host (requires -same-origin, the default)")
 		insecure          = fs.Bool("insecure", false, "skip TLS certificate verification")
 		proxy             = fs.String("proxy", "", "HTTP/HTTPS proxy URL")
 		cookies           = fs.String("cookies", "", "cookie header string, e.g. 'a=1; b=2'")
 		exclude           = fs.String("exclude", "", "comma-separated regex patterns to exclude")
+		include           = fs.String("include", "", "comma-separated regex patterns; if set, only URLs matching at least one are in scope (still subject to -exclude)")
+		allow             = fs.String("allow", "", "comma-separated list of domains to allow (layered on top of other scope rules); empty allows everything not denied")
+		deny              = fs.String("deny", "", "comma-separated list of domains to deny; takes precedence over -allow and every other scope rule")
 		legacy            = fs.Bool("legacy-mode", false, "use simpler legacy normalization/budget/retry behavior")
 		respectRobots     = fs.Bool("respect-robots-txt", false, "honor robots.txt Disallow rules (off by default)")
 		discoverOpenAPI   = fs.Bool("discover-openapi", false, "probe canonical OpenAPI/Swagger spec locations against the seed's origin")
@@ -111,6 +138,18 @@ Flags:
 		sortQueryParams   = fs.Bool("sort-query-params", false, "sort query params during URL normalization (off by default: order can be semantically meaningful)")
 		outPath           = fs.String("output", "", "also write the full JSONL record stream to this file, or to stdout (in place of the human summary) if the path is \"-\"")
 		showVersion       = fs.Bool("version", false, "print the version and exit")
+		loginURL          = fs.String("login-url", "", "log in before crawling: fetch this URL's form, submit credentials, and carry the resulting session")
+		loginUser         = fs.String("login-user", "", "username for -login-url")
+		loginPass         = fs.String("login-pass", "", "password for -login-url")
+		loginUserField    = fs.String("login-user-field", "username", "form field name for the username at -login-url")
+		loginPassField    = fs.String("login-pass-field", "password", "form field name for the password at -login-url")
+
+		bearerTokenURL     = fs.String("bearer-token-url", "", "log in before crawling: POST an OAuth2 client-credentials request to this URL and carry the resulting Authorization: Bearer header")
+		bearerClientID     = fs.String("bearer-client-id", "", "client_id for -bearer-token-url")
+		bearerClientSecret = fs.String("bearer-client-secret", "", "client_secret for -bearer-token-url")
+		bearerGrantType    = fs.String("bearer-grant-type", "client_credentials", "OAuth2 grant_type for -bearer-token-url")
+		basicUser          = fs.String("basic-user", "", "username for HTTP Basic auth (sent on every request; no login round-trip)")
+		basicPass          = fs.String("basic-pass", "", "password for -basic-user (may itself contain colons)")
 	)
 	headers := headerFlag{}
 	fs.Var(headers, "header", "extra request header \"Name: Value\" (repeatable)")
@@ -128,6 +167,53 @@ Flags:
 	}
 	seed := fs.Arg(0)
 
+	formActive := *loginURL != "" && *loginUser != ""
+	bearerActive := *bearerTokenURL != ""
+	basicActive := *basicUser != ""
+	if active := boolCount(formActive, bearerActive, basicActive); active > 1 {
+		return fmt.Errorf("chcrawl: only one of -login-url/-login-user, -bearer-token-url, -basic-user may be specified")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	var authResult auth.Result
+	switch {
+	case formActive:
+		loginFetcher, err := newAuthFetcher(*timeout, *proxy, *insecure, *maxBodyBytes)
+		if err != nil {
+			return fmt.Errorf("auth: building login fetcher: %w", err)
+		}
+		authResult, err = auth.FormLogin(ctx, loginFetcher, *loginURL, *loginUserField, *loginUser, *loginPassField, *loginPass, nil)
+		if err != nil {
+			return fmt.Errorf("auth: form login failed: %w", err)
+		}
+	case bearerActive:
+		bearerFetcher, err := newAuthFetcher(*timeout, *proxy, *insecure, *maxBodyBytes)
+		if err != nil {
+			return fmt.Errorf("auth: building bearer-login fetcher: %w", err)
+		}
+		authResult, err = auth.BearerLogin(ctx, bearerFetcher, *bearerTokenURL, *bearerClientID, *bearerClientSecret, *bearerGrantType)
+		if err != nil {
+			return fmt.Errorf("auth: bearer login failed: %w", err)
+		}
+	case basicActive:
+		h, err := auth.BasicAuthHeader(*basicUser + ":" + *basicPass)
+		if err != nil {
+			return fmt.Errorf("auth: basic auth: %w", err)
+		}
+		authResult = auth.Result{Headers: h}
+	}
+
+	// An explicit -cookies flag wins; login-derived headers always win on collision (mirrors
+	// BreachSQL's __main__.py auth-merge semantics for consistency across the toolchain).
+	if authResult.Cookies != "" && *cookies == "" {
+		*cookies = authResult.Cookies
+	}
+	for k, v := range authResult.Headers {
+		headers[k] = v
+	}
+
 	opts := []config.Option{
 		config.WithConcurrency(*concurrency),
 		config.WithPerHostConcurrency(*perHost),
@@ -140,6 +226,7 @@ Flags:
 		config.WithTimeout(*timeout),
 		config.WithDelay(*delay),
 		config.WithSameOrigin(*sameOrigin),
+		config.WithIncludeSubdomains(*includeSubdomains),
 		config.WithInsecureSkipVerify(*insecure),
 		config.WithProxy(*proxy),
 		config.WithCookies(*cookies),
@@ -158,6 +245,15 @@ Flags:
 	if *exclude != "" {
 		opts = append(opts, config.WithExcludePatterns(strings.Split(*exclude, ",")))
 	}
+	if *include != "" {
+		opts = append(opts, config.WithIncludePatterns(strings.Split(*include, ",")))
+	}
+	if *allow != "" {
+		opts = append(opts, config.WithAllowedDomains(strings.Split(*allow, ",")))
+	}
+	if *deny != "" {
+		opts = append(opts, config.WithDeniedDomains(strings.Split(*deny, ",")))
+	}
 	if *legacy {
 		opts = append(opts, config.LegacyPreset())
 	}
@@ -170,9 +266,7 @@ Flags:
 	var writer output.EventWriter
 	switch {
 	case *outPath == "-":
-		// Pure JSONL to stdout, no human summary — this is the stream a
-		// downstream consumer (e.g. `chcrawl ... -output - | breachsql
-		// --stdin`) parses, so it can't be mixed with human-readable text.
+		// Pure JSONL to stdout: a downstream consumer parses this stream, so no human text can mix in.
 		writer = output.NewWriter(os.Stdout)
 	case *outPath != "":
 		f, err := os.Create(*outPath)
@@ -190,9 +284,6 @@ Flags:
 		return err
 	}
 	defer eng.Close()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	_, err = eng.Run(ctx)
 	return err

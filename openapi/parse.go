@@ -5,9 +5,8 @@ import (
 	"strings"
 )
 
-// resolveRef walks a "#/a/b/c" JSON pointer against root. An unresolvable
-// or external ($ref outside "#/...") reference returns ok=false, and the
-// caller falls back to treating the original (unresolved) object as-is.
+// resolveRef walks a "#/a/b/c" JSON pointer against root; an unresolvable or external reference
+// returns ok=false, and the caller falls back to the original unresolved object.
 func resolveRef(root map[string]interface{}, ref string) (map[string]interface{}, bool) {
 	if !strings.HasPrefix(ref, "#/") {
 		return nil, false
@@ -29,8 +28,7 @@ func resolveRef(root map[string]interface{}, ref string) (map[string]interface{}
 	return m, ok
 }
 
-// resolveObj resolves obj["$ref"] against root if present, falling back to
-// obj itself if the ref is missing or unresolvable.
+// resolveObj resolves obj["$ref"] against root if present, else falls back to obj itself.
 func resolveObj(root map[string]interface{}, obj map[string]interface{}) map[string]interface{} {
 	if obj == nil {
 		return nil
@@ -47,9 +45,8 @@ func resolveObj(root map[string]interface{}, obj map[string]interface{}) map[str
 
 type paramKey struct{ name, in string }
 
-// mergeParams combines path-level and operation-level parameter lists,
-// resolving any $ref entries, with operation-level parameters overriding a
-// path-level parameter of the same (name, in).
+// mergeParams combines path-level and operation-level parameter lists (resolving $ref entries),
+// with operation-level parameters overriding a path-level one of the same (name, in).
 func mergeParams(root map[string]interface{}, pathLevel, opLevel []interface{}) []map[string]interface{} {
 	merged := map[paramKey]map[string]interface{}{}
 	var order []paramKey
@@ -76,8 +73,7 @@ func mergeParams(root map[string]interface{}, pathLevel, opLevel []interface{}) 
 	return result
 }
 
-// schemaPropertyNames resolves a $ref schema if needed and returns its
-// object property names, sorted for deterministic output.
+// schemaPropertyNames resolves a $ref schema if needed and returns its property names, sorted.
 func schemaPropertyNames(root map[string]interface{}, schema map[string]interface{}) []string {
 	schema = resolveObj(root, schema)
 	if schema == nil {
@@ -92,8 +88,7 @@ func schemaPropertyNames(root map[string]interface{}, schema map[string]interfac
 	return names
 }
 
-// bucketParams splits a merged parameter list into path/query params, plus
-// (v2-only) any "in": "formData" params, which are body-equivalent.
+// bucketParams splits a merged parameter list into path/query params, plus (v2-only) formData params.
 func bucketParams(params []map[string]interface{}) (pathParams, queryParams, formParams []string) {
 	for _, p := range params {
 		name := asString(p["name"])
@@ -112,8 +107,7 @@ func bucketParams(params []map[string]interface{}) (pathParams, queryParams, for
 	return
 }
 
-// parseV2 handles Swagger 2.0 documents: body params come from an "in":
-// "body" parameter's schema, or from "formData" parameters directly.
+// parseV2 handles Swagger 2.0 documents: body params come from an "in": "body" parameter's schema, or from formData directly.
 func parseV2(doc map[string]interface{}, sourceURL, origin string) (*Spec, error) {
 	basePath := asString(doc["basePath"])
 	paths := asMap(doc["paths"])
@@ -152,9 +146,8 @@ func parseV2(doc map[string]interface{}, sourceURL, origin string) (*Spec, error
 	return spec, nil
 }
 
-// parseV3 handles OpenAPI 3.x documents: body params come from
-// requestBody.content, preferring application/json and falling back to
-// the first available content type.
+// parseV3 handles OpenAPI 3.x documents: body params come from requestBody.content, preferring
+// application/json and falling back to the first available content type.
 func parseV3(doc map[string]interface{}, sourceURL, origin string) (*Spec, error) {
 	basePath := firstServerPath(asList(doc["servers"]))
 	paths := asMap(doc["paths"])
@@ -197,9 +190,7 @@ func firstServerPath(servers []interface{}) string {
 	}
 	server := asMap(servers[0])
 	rawURL := asString(server["url"])
-	// A server URL may be a bare path ("/v1") or a full URL
-	// ("https://api.example.com/v1") — either way we only want the path
-	// component appended after the request's own origin.
+	// A server URL may be a bare path ("/v1") or a full URL — either way we only want the path.
 	if i := strings.Index(rawURL, "://"); i != -1 {
 		rest := rawURL[i+3:]
 		if j := strings.IndexByte(rest, '/'); j != -1 {

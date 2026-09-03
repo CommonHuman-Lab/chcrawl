@@ -1,6 +1,5 @@
-// Package sourcemap recovers original (pre-minification) JS source from
-// .js.map files. It is a standalone utility, not wired into the core crawl
-// loop — a caller invokes it per JS file it already knows about.
+// Package sourcemap recovers original (pre-minification) JS source from .js.map files. It is a
+// standalone utility: a caller invokes it per JS file it already knows about.
 package sourcemap
 
 import (
@@ -16,13 +15,9 @@ import (
 	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
-// sourceMappingRe finds a "//# sourceMappingURL=..." or
-// "//@ sourceMappingURL=..." comment. noisePatterns filters out source
-// paths that are never useful for endpoint-mining purposes: vendored/
-// generated code, not application logic.
-//
-// Both are compiled lazily (see initRegexes) since Fetch is only reached
-// for actual JS responses — most crawled pages never touch this package.
+// sourceMappingRe finds a "//# sourceMappingURL=..." comment; noisePatterns filters out source
+// paths that are never useful (vendored/generated code, not application logic). Both are compiled
+// lazily (see initRegexes) since Fetch is only reached for actual JS responses.
 var (
 	sourceMappingRe *regexp.Regexp
 	noisePatterns   *regexp.Regexp
@@ -33,19 +28,14 @@ var initRegexes = sync.OnceFunc(func() {
 	noisePatterns = regexp.MustCompile(`node_modules/|webpack/runtime|__webpack_require__|\.spec\.[jt]s$|\.test\.[jt]s$|/vendor/`)
 })
 
-// searchWindowBytes bounds the sourceMappingURL search to the last 4096
-// bytes of the file, since the comment is always near the end of a
-// minified bundle.
+// searchWindowBytes bounds the sourceMappingURL search to the last 4096 bytes of the file, since
+// the comment is always near the end of a minified bundle.
 const searchWindowBytes = 4096
 
 // Result is the recovered source map data for one JS file.
 type Result struct {
-	// Sources maps each original (pre-minification) source path to its
-	// recovered text, where available.
-	Sources map[string]string
-	// Mapping records, for the one JS URL this Result was built for, the
-	// list of original source paths it maps to (in map-file order).
-	Mapping []string
+	Sources map[string]string // original source path -> recovered text, where available
+	Mapping []string          // original source paths this JS URL maps to, in map-file order
 }
 
 // Len returns the number of recovered sources.
@@ -58,9 +48,8 @@ type sourceMapJSON struct {
 	SourceRoot     string   `json:"sourceRoot"`
 }
 
-// Fetch locates and recovers the source map for one already-fetched JS
-// file. jsURL is the JS file's URL (used to resolve a relative map URL);
-// jsBody is its already-downloaded content.
+// Fetch locates and recovers the source map for one already-fetched JS file. jsURL resolves a
+// relative map URL; jsBody is the file's already-downloaded content.
 func Fetch(ctx context.Context, fetcher fetch.Fetcher, jsURL string, jsBody []byte) (*Result, error) {
 	initRegexes()
 	mapURLRaw, ok := findMapURL(jsBody)

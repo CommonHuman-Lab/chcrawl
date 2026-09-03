@@ -9,16 +9,10 @@ import (
 	"github.com/commonhuman-lab/chcrawl/internal/sourcemap"
 )
 
-// SourceMapExtractor recovers original (pre-minification) source for JS
-// files that reference a .js.map, via internal/sourcemap. Unlike the other
-// extractors it makes its own outbound HTTP call (to fetch the remote map
-// file, when the sourceMappingURL isn't an inline data URI), so it needs a
-// Fetcher — everything else in the registry is a pure function over
-// already-fetched content.
-//
-// It never enqueues the recovered sources as crawl targets (they're
-// typically bare TypeScript/JS module paths, not real HTTP routes); it
-// reports what it found as an informational Discovery with Meta only.
+// SourceMapExtractor recovers original (pre-minification) source for JS files that reference a
+// .js.map, via internal/sourcemap. Unlike the other extractors it needs a Fetcher, since it may
+// fetch a remote map file itself. Recovered sources are reported as an informational Discovery
+// (Meta only), never enqueued as crawl targets — they're typically bare module paths, not routes.
 type SourceMapExtractor struct {
 	Fetcher fetch.Fetcher
 }

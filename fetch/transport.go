@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// newTransport builds an *http.Transport tuned for a high-concurrency
-// crawler: generous connection reuse, keep-alive enabled, and an explicit
-// (rather than implicit-default) TLS verification toggle.
+// newTransport builds an *http.Transport tuned for a high-concurrency crawler: generous
+// connection reuse, keep-alive enabled, and an explicit TLS verification toggle.
 func newTransport(proxy string, insecureSkipVerify bool) (*http.Transport, error) {
 	t := &http.Transport{
 		MaxIdleConns:        200,

@@ -17,9 +17,8 @@ var assetExtensions = map[string]bool{
 	".xml": true, ".txt": true, ".csv": true,
 }
 
-// isAsset reports whether reqURL should bypass the browser. Extensionless
-// routes (SPA/API paths) always go through the browser — a known false
-// positive we accept over the cost of a HEAD pre-check.
+// isAsset reports whether reqURL should bypass the browser. Extensionless routes always go
+// through the browser — a known false positive accepted over the cost of a HEAD pre-check.
 func isAsset(reqURL string) bool {
 	u, err := url.Parse(reqURL)
 	if err != nil {

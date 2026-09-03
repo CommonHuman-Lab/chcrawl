@@ -9,16 +9,9 @@ import (
 	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
-// The regexes below deliberately require the matched path to contain
-// "/rest/" or "/api/" — any endpoint that doesn't follow that convention is
-// invisible to this extractor. A more general miner (matching arbitrary
-// path conventions) is future work, not a drop-in replacement for these
-// patterns.
-//
-// Compilation is deferred to initJSEndpointRegexes (invoked from Extract,
-// which Applies gates on a "javascript" content-type) rather than done at
-// package init: most crawled pages are never JavaScript, so most process
-// invocations would otherwise pay for compiling 10 regexes they never use.
+// These regexes require the matched path to contain "/rest/" or "/api/"; other conventions are
+// invisible here. Compilation is deferred to initJSEndpointRegexes (called from Extract, which
+// Applies gates on "javascript") since most crawled pages are never JS and shouldn't pay for it.
 var (
 	methodTemplateRe *regexp.Regexp
 	staticPathRe     *regexp.Regexp
@@ -54,8 +47,7 @@ var (
 	metaJSChunk    = map[string]string{"source": "js_chunk", "asset": "js"}
 )
 
-// JSEndpointExtractor mines API endpoint candidates and webpack chunk
-// filenames out of raw JavaScript source.
+// JSEndpointExtractor mines API endpoint candidates and webpack chunk filenames out of raw JS source.
 type JSEndpointExtractor struct{}
 
 func (JSEndpointExtractor) Name() string { return "js_endpoints" }
@@ -123,10 +115,8 @@ func (JSEndpointExtractor) Extract(ctx context.Context, in Input) ([]Discovery, 
 	return out, nil
 }
 
-// resolveTemplate substitutes ${...} placeholders using variable-name
-// heuristics: names suggesting a host/base become the origin, names
-// suggesting an id/index become "1", anything else becomes the literal
-// "test".
+// resolveTemplate substitutes ${...} placeholders by variable-name heuristics: host/base names
+// become the origin, id/index names become "1", anything else becomes the literal "test".
 func resolveTemplate(tmpl, origin string) string {
 	return templateVarRe.ReplaceAllStringFunc(tmpl, func(match string) string {
 		name := templateVarRe.FindStringSubmatch(match)[1]
@@ -151,8 +141,7 @@ func joinOrigin(origin, resolved string) string {
 	return origin + "/" + resolved
 }
 
-// inferMethod scans up to 60 characters before a static-path match for a
-// preceding HTTP method call, defaulting to GET when none is found.
+// inferMethod scans up to 60 chars before a static-path match for a preceding HTTP method call.
 func inferMethod(src string, matchStart int) string {
 	start := matchStart - 60
 	if start < 0 {

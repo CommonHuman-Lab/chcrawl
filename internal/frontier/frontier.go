@@ -1,5 +1,4 @@
-// Package frontier holds the bounded BFS queue of URLs pending a crawl
-// worker.
+// Package frontier holds the bounded BFS queue of URLs pending a crawl worker.
 package frontier
 
 import (
@@ -16,9 +15,8 @@ type Item struct {
 	DiscoveredVia string // "seed", "html_link", "form_action", "code_block", "js_endpoint", "ws"
 }
 
-// Frontier is a bounded, concurrency-safe FIFO queue of pending items.
-// Push blocks when the frontier is full, providing natural backpressure
-// against discovery-heavy pages. Pop blocks when empty until an item is
+// Frontier is a bounded, concurrency-safe FIFO queue of pending items. Push blocks when full,
+// providing natural backpressure against discovery-heavy pages; Pop blocks until an item is
 // available or the frontier is closed and drained.
 type Frontier interface {
 	Push(ctx context.Context, item Item) error
@@ -27,9 +25,8 @@ type Frontier interface {
 	Close()
 }
 
-// bounded is the default Frontier implementation: a fixed-capacity channel
-// plus a live-item counter so Len() and graceful drain-then-close both work
-// without racing against in-flight Push/Pop calls.
+// bounded is the default Frontier implementation: a fixed-capacity channel plus a closed flag so
+// Len() and graceful drain-then-close work without racing in-flight Push/Pop calls.
 type bounded struct {
 	ch chan Item
 

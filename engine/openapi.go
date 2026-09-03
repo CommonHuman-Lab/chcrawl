@@ -7,10 +7,8 @@ import (
 	"github.com/commonhuman-lab/chcrawl/output"
 )
 
-// discoverOpenAPI runs a one-shot OpenAPI/Swagger discovery probe against
-// the seed's origin and, if a spec is found, writes it as a distinct
-// "openapi" JSONL record. This is a standalone capability layered on top of
-// the crawl, not something the BFS loop triggers per-page.
+// discoverOpenAPI runs a one-shot OpenAPI/Swagger probe against the seed's origin, layered on
+// top of the crawl rather than triggered per-page, and writes any spec found as an "openapi" record.
 func (e *Engine) discoverOpenAPI(ctx context.Context) {
 	origin := e.seedURL.Scheme + "://" + e.seedURL.Host
 	spec, err := openapi.Discover(ctx, e.openapiFetcher, origin)

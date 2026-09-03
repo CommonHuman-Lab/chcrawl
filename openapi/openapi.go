@@ -1,5 +1,4 @@
-// Package openapi discovers and parses OpenAPI/Swagger specs. It is a
-// standalone utility — never wired into the core crawl loop — that a
+// Package openapi discovers and parses OpenAPI/Swagger specs. It is a standalone utility that a
 // caller invokes explicitly against a target origin.
 package openapi
 
@@ -16,8 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// specPaths are canonical locations probed for an OpenAPI/Swagger document
-// or a Swagger UI / Redoc page embedding one.
+// specPaths are canonical locations probed for a spec doc or a Swagger UI / Redoc page embedding one.
 var specPaths = []string{
 	"/openapi.json", "/openapi.yaml", "/openapi.yml",
 	"/swagger.json", "/swagger.yaml", "/swagger.yml",
@@ -28,8 +26,7 @@ var specPaths = []string{
 	"/swagger-ui.html", "/redoc",
 }
 
-// specURLRe finds an embedded spec URL referenced from a Swagger UI /
-// Redoc HTML page.
+// specURLRe finds an embedded spec URL referenced from a Swagger UI / Redoc HTML page.
 var specURLRe = regexp.MustCompile(`["']((?:https?://[^"']+)?/[^"']*(?:openapi|swagger)[^"']*\.(?:json|yaml))["']`)
 
 // Endpoint is one discovered API operation.
@@ -48,8 +45,7 @@ type Spec struct {
 	Endpoints []Endpoint
 }
 
-// Discover probes baseURL's canonical spec locations and returns the first
-// valid spec found, or nil if none of them yielded one.
+// Discover probes baseURL's canonical spec locations and returns the first valid spec found, or nil.
 func Discover(ctx context.Context, fetcher fetch.Fetcher, baseURL string) (*Spec, error) {
 	base := strings.TrimRight(baseURL, "/")
 	for _, p := range specPaths {
@@ -101,9 +97,7 @@ func findEmbeddedSpecURL(html []byte, pageURL string) (string, bool) {
 	return base.ResolveReference(ref).String(), true
 }
 
-// Load parses spec bytes (JSON or YAML) into a Spec. sourceURL is used to
-// derive the origin (and, if present, the spec's declared base path) that
-// endpoint URLs are built against.
+// Load parses spec bytes (JSON or YAML) into a Spec; sourceURL derives the origin endpoint URLs are built against.
 func Load(data []byte, sourceURL string) (*Spec, error) {
 	doc, err := decode(data)
 	if err != nil {
@@ -121,8 +115,7 @@ func Load(data []byte, sourceURL string) (*Spec, error) {
 	case strings.HasPrefix(asString(doc["openapi"]), "3."):
 		return parseV3(doc, sourceURL, origin)
 	case doc["paths"] != nil:
-		// No explicit version field but a "paths" map exists — best-effort
-		// parse as v3, the more common modern convention.
+		// No explicit version field but "paths" exists — best-effort parse as v3, the modern convention.
 		return parseV3(doc, sourceURL, origin)
 	default:
 		return nil, fmt.Errorf("openapi: not a recognizable OpenAPI/Swagger document")
@@ -141,10 +134,8 @@ func decode(data []byte) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("openapi: could not parse as JSON or YAML")
 }
 
-// normalizeYAML converts yaml.v3's map[string]interface{} decoding (which
-// can produce map[interface{}]interface{} for nested maps in some
-// configurations) into a consistently map[string]interface{}-typed tree,
-// so downstream code only has one shape to handle.
+// normalizeYAML converts yaml.v3's decoding (which can nest map[interface{}]interface{}) into a
+// consistently map[string]interface{}-typed tree, so downstream code has one shape to handle.
 func normalizeYAML(v interface{}) map[string]interface{} {
 	out, _ := normalizeYAMLValue(v).(map[string]interface{})
 	return out

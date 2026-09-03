@@ -11,15 +11,9 @@ import (
 	"github.com/commonhuman-lab/chcrawl/output"
 )
 
-// seedSitemap discovers the site's XML sitemap(s) and injects their <loc>
-// URLs into the frontier as depth-0 seeds (DiscoveredVia: "sitemap"), so
-// client-rendered sites get full route coverage even though their links are
-// invisible to static HTML parsing.
-//
-// Runs BEFORE workers start (inside Run), so drain-detection can't race the
-// injection and end the crawl before sitemap pages are ever queued. Scope
-// and dedup are enforced per URL exactly like discovered children: a sitemap
-// listing off-origin URLs has those entries dropped.
+// seedSitemap discovers the site's XML sitemap(s) and injects their <loc> URLs into the frontier
+// as depth-0 seeds, giving client-rendered sites route coverage static HTML parsing would miss.
+// Must run before workers start (see Run), or drain-detection could end the crawl too early.
 func (e *Engine) seedSitemap(ctx context.Context, pending *sync.WaitGroup) {
 	limit := e.cfg.MaxFrontierSize - 1
 	if e.cfg.MaxPages > 0 && e.cfg.MaxPages < limit {

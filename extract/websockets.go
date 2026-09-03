@@ -10,14 +10,9 @@ import (
 	"github.com/commonhuman-lab/chcrawl/fetch"
 )
 
-// These patterns match an absolute wss?:// literal (optionally inside a
-// `new WebSocket(...)` call), or a relative "/path" passed to
-// `new WebSocket(...)`.
-//
-// Compilation is deferred to initWebSocketRegexes, called only after
-// Extract's cheap byte-scan already found "WebSocket"/"ws://"/"wss://" in
-// the body — most pages contain none of those and never pay for compiling
-// these 3 regexes at all.
+// These patterns match an absolute wss?:// literal (optionally inside `new WebSocket(...)`), or a
+// relative "/path" passed to `new WebSocket(...)`. Compilation is deferred to
+// initWebSocketRegexes, called only after Extract's cheap byte-scan finds a hit in the body.
 var (
 	wsNewAbsoluteRe  *regexp.Regexp
 	wsBareAbsoluteRe *regexp.Regexp
@@ -32,8 +27,7 @@ var initWebSocketRegexes = sync.OnceFunc(func() {
 
 var metaWebSocket = map[string]string{"source": "websocket"}
 
-// WebSocketExtractor finds WebSocket endpoint URLs referenced in HTML or JS
-// source text.
+// WebSocketExtractor finds WebSocket endpoint URLs referenced in HTML or JS source text.
 type WebSocketExtractor struct{}
 
 func (WebSocketExtractor) Name() string { return "websockets" }

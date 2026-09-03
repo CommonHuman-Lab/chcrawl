@@ -115,10 +115,8 @@ func (e *Engine) process(ctx context.Context, cancel context.CancelFunc, pending
 	_ = e.writer.WritePage(evt)
 }
 
-// admitPageBudget atomically checks the MaxPages hard cap (0 = unbounded).
-// It returns false once the budget is exhausted, in which case the caller
-// must trigger engine-wide cancellation immediately rather than waiting for
-// any in-flight work to finish, so the cap can't be overshot.
+// admitPageBudget atomically checks the MaxPages hard cap (0 = unbounded); once exhausted the
+// caller must cancel the engine immediately rather than let in-flight work finish, or the cap overshoots.
 func (e *Engine) admitPageBudget() bool {
 	if e.cfg.MaxPages == 0 {
 		return true
@@ -155,11 +153,8 @@ func (e *Engine) extractDiscoveries(ctx context.Context, resp *fetch.Response, r
 	return discoveries, doc
 }
 
-// recordDiscoveryStats counts things *found on a page* (endpoints, forms,
-// JS-derived routes). Counting actual JS files fetched happens separately
-// in process(), keyed off the response's real Content-Type rather than how
-// the file was discovered — a page can link to a .js file via a plain
-// <a href>, not just <script src>, and that should still count.
+// recordDiscoveryStats counts things found on a page; JS files fetched are counted separately in
+// process() by real Content-Type, since a .js file can be linked via <a href>, not just <script src>.
 func (e *Engine) recordDiscoveryStats(d extract.Discovery) {
 	switch d.Kind {
 	case "form":

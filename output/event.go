@@ -37,8 +37,7 @@ type ErrorEvent struct {
 	RetryDelayMS  int64  `json:"retry_delay_ms,omitempty"`
 }
 
-// OpenAPIEvent records the result of an optional OpenAPI/Swagger discovery
-// pass against the crawl's target origin.
+// OpenAPIEvent records the result of an optional OpenAPI/Swagger discovery pass.
 type OpenAPIEvent struct {
 	Type      string             `json:"type"`
 	SourceURL string             `json:"source_url"`
@@ -70,13 +69,10 @@ type SummaryEvent struct {
 	OpenAPIEndpoints    int64         `json:"openapi_endpoints_discovered"`
 	SitemapURLs         int64         `json:"sitemap_urls_seeded"`
 	RetryAttempts       int64         `json:"retry_attempts"`
-	// RetryBackoff/ActiveWall are nanosecond precision; the MS fields are
-	// rounded convenience copies. Prefer the ns fields for statistics — ms
-	// rounding distorts sub-millisecond workloads.
-	RetryBackoff time.Duration `json:"retry_backoff_ns"`
-	// ActiveWall is wall-clock Duration minus RetryBackoff (floored at 0, not
-	// CPU time); concurrent retries can overlap on the wall clock while
-	// RetryBackoff sums them independently, so it can exceed Duration.
+	// RetryBackoff/ActiveWall are nanosecond precision; the MS fields are rounded copies — prefer
+	// ns for statistics. ActiveWall is wall-clock Duration minus RetryBackoff (floored at 0);
+	// concurrent retries can overlap on the wall clock, so RetryBackoff can exceed Duration.
+	RetryBackoff   time.Duration `json:"retry_backoff_ns"`
 	ActiveWall     time.Duration `json:"active_wall_ns"`
 	RetryBackoffMS int64         `json:"retry_backoff_ms"`
 	ActiveWallMS   int64         `json:"active_wall_ms"`

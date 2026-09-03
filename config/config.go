@@ -10,17 +10,13 @@ import (
 	"github.com/commonhuman-lab/chcrawl/internal/retry"
 )
 
-// CanonicalizationMode controls how aggressively URLs are normalized before
-// dedup/scope checks.
+// CanonicalizationMode controls how aggressively URLs are normalized before dedup/scope checks.
 type CanonicalizationMode int
 
 const (
-	// StrictMode strips default ports and normalizes percent-encoding case,
-	// in addition to the LegacyMode behaviors. This is the chcrawl default.
+	// StrictMode also strips default ports and normalizes percent-encoding case. The chcrawl default.
 	StrictMode CanonicalizationMode = iota
-	// LegacyMode applies a simpler normalization: lowercase scheme+host,
-	// strip trailing slash (root pinned to "/"), strip fragment, query
-	// string left untouched.
+	// LegacyMode: lowercase scheme+host, strip trailing slash (root pinned to "/") and fragment, query untouched.
 	LegacyMode
 )
 
@@ -41,8 +37,12 @@ type Options struct {
 	CountErrorsAgainstBudget bool
 
 	// Scope.
-	SameOrigin      bool
-	ExcludePatterns []*regexp.Regexp
+	SameOrigin        bool
+	IncludeSubdomains bool // requires SameOrigin; SubdomainScope instead of ExactOriginScope
+	AllowedDomains    []string
+	DeniedDomains     []string
+	ExcludePatterns   []*regexp.Regexp
+	IncludePatterns   []*regexp.Regexp
 
 	// URL canonicalization.
 	Canonicalization CanonicalizationMode
@@ -84,12 +84,28 @@ func WithMaxDuration(d time.Duration) Option { return func(o *Options) { o.MaxDu
 func WithCountErrorsAgainstBudget(b bool) Option {
 	return func(o *Options) { o.CountErrorsAgainstBudget = b }
 }
-func WithSameOrigin(b bool) Option { return func(o *Options) { o.SameOrigin = b } }
+func WithSameOrigin(b bool) Option        { return func(o *Options) { o.SameOrigin = b } }
+func WithIncludeSubdomains(b bool) Option { return func(o *Options) { o.IncludeSubdomains = b } }
+func WithAllowedDomains(domains []string) Option {
+	return func(o *Options) { o.AllowedDomains = domains }
+}
+func WithDeniedDomains(domains []string) Option {
+	return func(o *Options) { o.DeniedDomains = domains }
+}
 func WithExcludePatterns(patterns []string) Option {
 	return func(o *Options) {
 		for _, p := range patterns {
 			if re, err := regexp.Compile(p); err == nil {
 				o.ExcludePatterns = append(o.ExcludePatterns, re)
+			}
+		}
+	}
+}
+func WithIncludePatterns(patterns []string) Option {
+	return func(o *Options) {
+		for _, p := range patterns {
+			if re, err := regexp.Compile(p); err == nil {
+				o.IncludePatterns = append(o.IncludePatterns, re)
 			}
 		}
 	}
@@ -144,8 +160,7 @@ func defaults() *Options {
 	}
 }
 
-// New builds a validated Options from the seed URL and the given Option
-// functions.
+// New builds a validated Options from the seed URL and the given Option functions.
 func New(seedURL string, opts ...Option) (*Options, error) {
 	o := defaults()
 	o.SeedURL = seedURL
@@ -200,11 +215,13 @@ func (o *Options) Validate() error {
 	if o.RenderJS && o.RenderTimeout <= 0 {
 		return fmt.Errorf("config: RenderTimeout must be > 0 when RenderJS is set")
 	}
+	if o.IncludeSubdomains && !o.SameOrigin {
+		return fmt.Errorf("config: IncludeSubdomains requires SameOrigin")
+	}
 	return nil
 }
 
-// LegacyPreset switches canonicalization and retry-relevant fields to their
-// simpler LegacyMode behavior.
+// LegacyPreset switches canonicalization and retry-relevant fields to their simpler LegacyMode behavior.
 func LegacyPreset() Option {
 	return func(o *Options) {
 		o.Canonicalization = LegacyMode

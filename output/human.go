@@ -7,10 +7,8 @@ import (
 	"sync"
 )
 
-// HumanWriter renders crawl events as a short, human-readable stream: the
-// first few fetched pages and any errors, followed by a final summary
-// block. Full per-page detail (every discovery, every record) belongs in
-// JSONL via -output, not the terminal.
+// HumanWriter renders a short, human-readable stream: the first few pages and errors, then a
+// final summary. Full per-page detail belongs in JSONL via -output, not the terminal.
 type HumanWriter struct {
 	mu       sync.Mutex
 	out      io.Writer
@@ -20,9 +18,8 @@ type HumanWriter struct {
 	errs     int
 }
 
-// NewHumanWriter renders to w, showing at most the first maxLines page
-// events before collapsing the rest into "...". Colors are used only when w
-// is a terminal.
+// NewHumanWriter renders to w, showing at most the first maxLines page events before collapsing
+// the rest into "...". Colors are used only when w is a terminal.
 func NewHumanWriter(w io.Writer, maxLines int) *HumanWriter {
 	return &HumanWriter{out: w, maxLines: maxLines, color: isTerminal(w)}
 }
@@ -154,9 +151,8 @@ func humanBytes(n int) string {
 	}
 }
 
-// MultiWriter fans every event out to each of its EventWriters in order,
-// used to drive the human-readable console summary and a raw JSONL -output
-// file from the same crawl.
+// MultiWriter fans every event out to each of its EventWriters in order (e.g. the human-readable
+// console summary and a raw JSONL -output file from the same crawl).
 type MultiWriter struct {
 	writers []EventWriter
 }

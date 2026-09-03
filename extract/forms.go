@@ -9,10 +9,8 @@ import (
 	"golang.org/x/net/html"
 )
 
-// requiredDefaults gives required fields with no preset value a
-// type-appropriate non-empty default, so a replayed form submission won't
-// fail server-side required-field validation on a field that isn't the
-// injection target.
+// requiredDefaults gives required fields with no preset value a type-appropriate non-empty
+// default, so replaying the form won't fail validation on a field that isn't the injection target.
 var requiredDefaults = map[string]string{
 	"text":     "test",
 	"search":   "test",
@@ -116,8 +114,7 @@ func extractForm(form *html.Node, base *url.URL) (Discovery, bool) {
 				}
 			}
 		}
-		// A <form> cannot legally nest another <form>, so a plain
-		// depth-first walk over the whole subtree is safe.
+		// A <form> cannot legally nest another <form>, so a plain depth-first walk is safe.
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walkFields(c)
 		}

@@ -12,16 +12,14 @@ type Policy interface {
 	InScope(u, seed *url.URL) bool
 }
 
-// ExactOriginScope requires an exact scheme+host(+port) match. This is the
-// default scope policy.
+// ExactOriginScope requires an exact scheme+host(+port) match. This is the default scope policy.
 type ExactOriginScope struct{}
 
 func (ExactOriginScope) InScope(u, seed *url.URL) bool {
 	return strings.EqualFold(u.Scheme, seed.Scheme) && strings.EqualFold(u.Host, seed.Host)
 }
 
-// SubdomainScope allows any host that is the root domain or a subdomain of
-// it (e.g. "app.example.com" and "example.com" both match root "example.com").
+// SubdomainScope allows any host that is the root domain or a subdomain of it.
 type SubdomainScope struct {
 	RootDomain string
 }
@@ -32,9 +30,7 @@ func (s SubdomainScope) InScope(u, _ *url.URL) bool {
 	return host == root || strings.HasSuffix(host, "."+root)
 }
 
-// AllowDenyScope matches hosts against explicit allow/deny domain lists.
-// Deny takes precedence over allow. An empty Allow list means "allow
-// everything not denied".
+// AllowDenyScope matches hosts against allow/deny lists; Deny wins, and an empty Allow means "allow everything not denied".
 type AllowDenyScope struct {
 	Allow []string
 	Deny  []string
@@ -63,9 +59,7 @@ func matchesDomain(host, domain string) bool {
 	return host == domain || strings.HasSuffix(host, "."+domain)
 }
 
-// RegexScope includes/excludes URLs by regex against the full URL string.
-// Exclude takes precedence over include. A nil Include list means "include
-// everything not excluded".
+// RegexScope includes/excludes URLs by regex against the full URL string; Exclude wins, and a nil Include means "include everything not excluded".
 type RegexScope struct {
 	Include []*regexp.Regexp
 	Exclude []*regexp.Regexp
@@ -89,8 +83,7 @@ func (s RegexScope) InScope(u, _ *url.URL) bool {
 	return false
 }
 
-// CompositeScope requires all wrapped policies to allow the URL (AND
-// semantics).
+// CompositeScope requires all wrapped policies to allow the URL (AND semantics).
 type CompositeScope struct {
 	Policies []Policy
 }

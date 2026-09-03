@@ -14,8 +14,7 @@ var uaPool = []string{
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
 }
 
-// randomUA picks one User-Agent string. chcrawl selects a single UA per
-// Fetcher instance (i.e. per crawl session) rather than per-request.
+// randomUA picks one User-Agent string; chcrawl selects a single UA per Fetcher instance rather than per-request.
 func randomUA() string {
 	return uaPool[rand.Intn(len(uaPool))]
 }

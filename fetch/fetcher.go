@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"time"
 
@@ -33,6 +35,7 @@ type Config struct {
 
 type httpFetcher struct {
 	client              *http.Client
+	jar                 *cookiejar.Jar
 	baseHeaders         http.Header
 	maxBodyBytes        int64
 	allowedContentTypes []string
@@ -52,9 +55,17 @@ func New(cfg Config) (Fetcher, error) {
 		maxRedirects = 20
 	}
 
+	// A jar is what lets a Set-Cookie on an intermediate redirect hop (a login POST's 302) take
+	// effect on later requests — without one, only the final response's Headers are visible.
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, err
+	}
+
 	client := &http.Client{
 		Transport: transport,
 		Timeout:   cfg.Timeout,
+		Jar:       jar,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= maxRedirects {
 				return errTooManyRedirects
@@ -74,6 +85,7 @@ func New(cfg Config) (Fetcher, error) {
 
 	return &httpFetcher{
 		client:              client,
+		jar:                 jar,
 		baseHeaders:         headers,
 		maxBodyBytes:        cfg.MaxBodyBytes,
 		allowedContentTypes: cfg.AllowedContentTypes,
@@ -84,10 +96,8 @@ func New(cfg Config) (Fetcher, error) {
 
 var errTooManyRedirects = errors.New("fetch: too many redirects")
 
-// isRetryableErr excludes deterministic, never-going-to-succeed failures
-// from the retry loop — retrying a redirect loop with backoff just wastes
-// time three times over instead of once, since the outcome can't change
-// between attempts.
+// isRetryableErr excludes deterministic failures from the retry loop — retrying a redirect loop
+// just wastes time, since the outcome can't change between attempts.
 func isRetryableErr(err error) bool {
 	return !errors.Is(err, errTooManyRedirects)
 }
@@ -129,12 +139,8 @@ func (f *httpFetcher) Fetch(ctx context.Context, req Request) (*Response, error)
 	}
 }
 
-// sleepBackoff sleeps out a retry delay, releasing gate (if non-nil) for the
-// sleep's duration and reacquiring it before returning, so a held
-// per-host concurrency slot isn't wasted on a goroutine that's merely
-// waiting out backoff. Returns false if ctx is cancelled during the sleep
-// or the reacquire — callers must not retry after a false return, and must
-// not assume the gate is held in that case (see HostGate's doc comment).
+// sleepBackoff sleeps out a retry delay, releasing gate (if non-nil) for the duration and
+// reacquiring it before returning. Returns false if ctx is cancelled; callers must not retry then.
 func sleepBackoff(ctx context.Context, gate HostGate, d time.Duration) bool {
 	if gate == nil {
 		return sleepCtx(ctx, d)
@@ -146,8 +152,7 @@ func sleepBackoff(ctx context.Context, gate HostGate, d time.Duration) bool {
 	return gate.Acquire(ctx) == nil
 }
 
-// sleepCtx sleeps for d, or returns false immediately if ctx is cancelled
-// first — callers must not retry after a false return.
+// sleepCtx sleeps for d, or returns false immediately if ctx is cancelled first.
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		return true
@@ -180,13 +185,17 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 	if err != nil {
 		return nil, err
 	}
-	// f.baseHeaders is built once at fetcher construction and never mutated
-	// afterward, so concurrent GET requests (the overwhelming majority of
-	// any crawl) can safely share it directly. Only clone when this request
-	// needs its own Content-Type, since that mutates the map in place.
-	httpReq.Header = f.baseHeaders
+	// f.baseHeaders itself is never mutated after construction, but the
+	// *map* handed to http.Request.Header must still be a fresh clone per
+	// request: net/http's Transport writes into a request's Header map
+	// internally during RoundTrip (e.g. default Accept-Encoding handling),
+	// so every concurrent request sharing the same map instance races —
+	// confirmed live as a "concurrent map iteration and map write" crash
+	// once per-host concurrency was raised past chcrawl's conservative
+	// default. Cloning is a small per-request map copy; sharing the map is
+	// a crash waiting for enough concurrency to trigger it.
+	httpReq.Header = f.baseHeaders.Clone()
 	if req.ContentType != "" {
-		httpReq.Header = f.baseHeaders.Clone()
 		httpReq.Header.Set("Content-Type", req.ContentType)
 	}
 
@@ -196,9 +205,8 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 		if len(via) > 0 {
 			prev := via[len(via)-1]
 			status := 0
-			// r.Response is the redirect response that produced r, i.e. the
-			// response from prev's URL — not prev.Response, which net/http
-			// never populates on entries in `via`.
+			// r.Response is the redirect response from prev's URL; prev.Response is never
+			// populated by net/http on entries in `via`.
 			if r.Response != nil {
 				status = r.Response.StatusCode
 			}
@@ -215,6 +223,7 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 	defer resp.Body.Close()
 
 	contentType := resp.Header.Get("Content-Type")
+	cookies := f.cookieHeader(resp.Request.URL)
 
 	if !contentTypeAllowed(contentType, f.allowedContentTypes) {
 		_, _ = io.CopyN(io.Discard, resp.Body, 4096)
@@ -226,6 +235,7 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 			Headers:       resp.Header,
 			ContentType:   contentType,
 			FetchDuration: time.Since(start),
+			Cookies:       cookies,
 		}, nil
 	}
 
@@ -250,7 +260,22 @@ func (f *httpFetcher) doOnce(ctx context.Context, req Request) (*Response, error
 		ContentType:   contentType,
 		Truncated:     truncated,
 		FetchDuration: time.Since(start),
+		Cookies:       cookies,
 	}, nil
+}
+
+// cookieHeader formats the jar's cookies for u in the same shape Config.Cookies expects, so a
+// caller can feed a Response.Cookies value straight back into another fetcher's config.
+func (f *httpFetcher) cookieHeader(u *url.URL) string {
+	cookies := f.jar.Cookies(u)
+	if len(cookies) == 0 {
+		return ""
+	}
+	parts := make([]string, len(cookies))
+	for i, c := range cookies {
+		parts[i] = c.Name + "=" + c.Value
+	}
+	return strings.Join(parts, "; ")
 }
 
 func readBody(r io.Reader, contentLength, maxBodyBytes int64) ([]byte, error) {

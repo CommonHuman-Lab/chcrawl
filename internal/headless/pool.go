@@ -6,10 +6,9 @@ import (
 	"github.com/go-rod/rod"
 )
 
-// pagePool bounds concurrent browser pages in use. Acquire opens a fresh
-// page each time and Release closes it (no reuse) to avoid state leaking
-// between navigations. open/close are injectable so tests don't need a
-// real browser.
+// pagePool bounds concurrent browser pages in use. Acquire opens a fresh page each time and
+// Release closes it (no reuse), avoiding state leaks between navigations. open/close are
+// injectable so tests don't need a real browser.
 type pagePool struct {
 	open  func(ctx context.Context) (*rod.Page, error)
 	close func(*rod.Page)

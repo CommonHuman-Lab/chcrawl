@@ -1,5 +1,4 @@
-// Package engine wires the frontier, fetcher, extractors, scope/dedup
-// policy, and output writer into a running crawl.
+// Package engine wires the frontier, fetcher, extractors, scope/dedup policy, and output writer into a running crawl.
 package engine
 
 import (
@@ -39,10 +38,8 @@ type Engine struct {
 	closer         io.Closer       // nil unless cfg.RenderJS (closes the headless browser)
 }
 
-// newAuxFetcher builds an unrestricted fetcher (no content-type allowlist)
-// for a side-channel probe — robots.txt, OpenAPI specs, sitemaps, source
-// maps — that doesn't go through the main crawl fetcher's page-oriented
-// filtering. purpose is used only for the wrapped error message.
+// newAuxFetcher builds an unrestricted fetcher (no content-type allowlist) for a side-channel
+// probe (robots.txt, OpenAPI, sitemaps, source maps). purpose only names the wrapped error.
 func newAuxFetcher(cfg *config.Options, purpose string) (fetch.Fetcher, error) {
 	f, err := fetch.New(fetch.Config{
 		Timeout:            cfg.Timeout,
@@ -100,11 +97,18 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 	}
 
 	policies := []scope.Policy{}
-	if cfg.SameOrigin {
+	switch {
+	case cfg.SameOrigin && cfg.IncludeSubdomains:
+		// Hostname() strips the port; SubdomainScope.InScope only strips it off the candidate host.
+		policies = append(policies, scope.SubdomainScope{RootDomain: seedURL.Hostname()})
+	case cfg.SameOrigin:
 		policies = append(policies, scope.ExactOriginScope{})
 	}
-	if len(cfg.ExcludePatterns) > 0 {
-		policies = append(policies, scope.RegexScope{Exclude: cfg.ExcludePatterns})
+	if len(cfg.AllowedDomains) > 0 || len(cfg.DeniedDomains) > 0 {
+		policies = append(policies, scope.AllowDenyScope{Allow: cfg.AllowedDomains, Deny: cfg.DeniedDomains})
+	}
+	if len(cfg.ExcludePatterns) > 0 || len(cfg.IncludePatterns) > 0 {
+		policies = append(policies, scope.RegexScope{Include: cfg.IncludePatterns, Exclude: cfg.ExcludePatterns})
 	}
 	scopePolicy := scope.Policy(scope.CompositeScope{Policies: policies})
 
@@ -115,10 +119,8 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 		extract.WebSocketExtractor{},
 	}
 	if cfg.RecoverSourceMaps {
-		// .js.map files are commonly served with an uncommon or missing
-		// content-type (application/octet-stream, or nothing at all), which
-		// the crawl fetcher's content-type allowlist would otherwise
-		// silently discard.
+		// .js.map files often serve with an uncommon or missing content-type, which the crawl
+		// fetcher's allowlist would otherwise silently discard.
 		sourceMapFetcher, err := newAuxFetcher(cfg, "source-map")
 		if err != nil {
 			return nil, err
@@ -129,9 +131,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 
 	var robotsChecker *robots.Checker
 	if cfg.RespectRobotsTxt {
-		// robots.txt is text/plain, which the crawl fetcher's content-type
-		// allowlist would otherwise discard, so it gets its own fetcher
-		// with an unrestricted allowlist.
+		// robots.txt is text/plain, which the crawl fetcher's allowlist would otherwise discard.
 		robotsFetcher, err := newAuxFetcher(cfg, "robots.txt")
 		if err != nil {
 			return nil, err
@@ -141,9 +141,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 
 	var openapiFetcher fetch.Fetcher
 	if cfg.DiscoverOpenAPI {
-		// OpenAPI specs are commonly served as YAML (text/yaml,
-		// application/x-yaml, or even text/plain), none of which match the
-		// crawl fetcher's default content-type allowlist.
+		// OpenAPI specs are commonly served as YAML, which doesn't match the crawl fetcher's allowlist.
 		openapiFetcher, err = newAuxFetcher(cfg, "OpenAPI discovery")
 		if err != nil {
 			return nil, err
@@ -152,10 +150,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 
 	var sitemapFetcher fetch.Fetcher
 	if cfg.DiscoverSitemap {
-		// Sitemap XML is commonly served as application/xml or text/xml,
-		// and robots.txt as text/plain — neither guaranteed to match the
-		// crawl fetcher's content-type allowlist, so it gets its own
-		// unrestricted fetcher (mirrors the robots/openapi pattern).
+		// Sitemap XML isn't guaranteed to match the crawl fetcher's content-type allowlist either.
 		sitemapFetcher, err = newAuxFetcher(cfg, "sitemap discovery")
 		if err != nil {
 			return nil, err
@@ -180,9 +175,7 @@ func New(cfg *config.Options, writer output.EventWriter) (*Engine, error) {
 	}, nil
 }
 
-// Run drives the crawl to completion (frontier drained, MaxPages hit,
-// MaxDuration elapsed, or ctx cancelled by the caller) and returns the
-// final summary.
+// Run drives the crawl to completion (frontier drained, a budget hit, or ctx cancelled) and returns the final summary.
 func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	start := time.Now()
 	ctx, cancel := context.WithCancel(callerCtx)
@@ -202,9 +195,8 @@ func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	e.stats.urlsInScope.Add(1)
 	e.enqueue(ctx, &pending, frontier.Item{URL: seedKey, Depth: 0, DiscoveredVia: "seed"})
 
-	// Sitemap seeding runs before workers start: injected items are part of
-	// the initial pending set, so the drained-channel can't close while
-	// sitemap URLs are still in flight from discovery.
+	// Must run before workers start: injected items join the initial pending set, so drain can't
+	// close while sitemap URLs are still being discovered.
 	if e.cfg.DiscoverSitemap && e.sitemapFetcher != nil {
 		e.seedSitemap(ctx, &pending)
 	}
@@ -231,10 +223,8 @@ func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	workers.Wait()
 	e.frontier.Close()
 
-	// Uses callerCtx, not the crawl's own (possibly already-cancelled-by-
-	// MaxPages/MaxDuration) derived ctx — an internal budget trigger
-	// shouldn't also skip this bonus discovery step, only genuine caller
-	// cancellation (e.g. Ctrl-C) should.
+	// Uses callerCtx, not the derived ctx: an internal budget trigger shouldn't skip this bonus
+	// step too — only genuine caller cancellation (e.g. Ctrl-C) should.
 	if e.cfg.DiscoverOpenAPI && callerCtx.Err() == nil {
 		e.discoverOpenAPI(callerCtx)
 	}
@@ -246,10 +236,8 @@ func (e *Engine) Run(callerCtx context.Context) (*output.SummaryEvent, error) {
 	return &summary, nil
 }
 
-// enqueue registers pending work for item and pushes it to the frontier. If
-// the push fails (frontier full past ctx deadline, or shutting down), the
-// pending count is corrected immediately so termination detection can't
-// hang waiting for an item that was never actually queued.
+// enqueue registers pending work for item and pushes it to the frontier; if the push fails, the
+// pending count is corrected immediately so termination detection can't hang on an unqueued item.
 func (e *Engine) enqueue(ctx context.Context, pending *sync.WaitGroup, item frontier.Item) {
 	pending.Add(1)
 	if err := e.frontier.Push(ctx, item); err != nil {
@@ -257,9 +245,8 @@ func (e *Engine) enqueue(ctx context.Context, pending *sync.WaitGroup, item fron
 	}
 }
 
-// Close releases resources held by the engine — currently just the headless
-// browser when RenderJS was used. No-op otherwise. Callers should defer this
-// after a successful New().
+// Close releases engine resources (currently just the headless browser when RenderJS was used) —
+// no-op otherwise. Callers should defer this after a successful New().
 func (e *Engine) Close() error {
 	if e.closer == nil {
 		return nil

@@ -1,6 +1,4 @@
-// Package robots implements an opt-in robots.txt policy gate: an explicit,
-// off-by-default policy appropriate for a pentest tool, but available for
-// callers who want it.
+// Package robots implements an opt-in, off-by-default robots.txt policy gate for callers who want it.
 package robots
 
 import (
@@ -21,9 +19,7 @@ type ruleset struct {
 	rules []rule
 }
 
-// allowed applies the standard longest-prefix-match algorithm, with ties
-// broken in favor of Allow (matching Google's documented robots.txt
-// interpretation).
+// allowed applies longest-prefix-match, with ties broken in favor of Allow (matching Google's documented interpretation).
 func (r *ruleset) allowed(path string) bool {
 	bestLen := -1
 	bestAllow := true
@@ -45,8 +41,7 @@ type hostEntry struct {
 	groups map[string]*ruleset
 }
 
-// Checker fetches and caches robots.txt once per host, then answers
-// Allowed() queries against the cached rules.
+// Checker fetches and caches robots.txt once per host, then answers Allowed() against the cache.
 type Checker struct {
 	fetcher   fetch.Fetcher
 	userAgent string
@@ -55,9 +50,8 @@ type Checker struct {
 	hosts map[string]*hostEntry
 }
 
-// New builds a Checker. fetcher should be configured to accept text/plain
-// bodies (robots.txt is not HTML/JS/JSON/XML, so the crawl fetcher's
-// content-type allowlist would otherwise discard it).
+// New builds a Checker. fetcher should accept text/plain bodies, or the crawl fetcher's default
+// content-type allowlist would discard robots.txt.
 func New(fetcher fetch.Fetcher, userAgent string) *Checker {
 	if userAgent == "" {
 		userAgent = "*"
@@ -65,9 +59,8 @@ func New(fetcher fetch.Fetcher, userAgent string) *Checker {
 	return &Checker{fetcher: fetcher, userAgent: strings.ToLower(userAgent), hosts: map[string]*hostEntry{}}
 }
 
-// Allowed reports whether target may be fetched per the host's robots.txt.
-// A fetch failure or missing robots.txt is treated as "allow everything"
-// (the conventional interpretation).
+// Allowed reports whether target may be fetched per the host's robots.txt. A fetch failure or
+// missing robots.txt is treated as "allow everything" (the conventional interpretation).
 func (c *Checker) Allowed(ctx context.Context, target *url.URL) bool {
 	entry := c.entryFor(target.Host)
 	entry.once.Do(func() {
@@ -114,9 +107,8 @@ func selectGroup(groups map[string]*ruleset, userAgent string) *ruleset {
 	return groups["*"]
 }
 
-// parse implements the subset of the robots.txt format relevant to
-// crawling: User-agent groups with Allow/Disallow directives. Sitemap and
-// Crawl-delay directives are ignored.
+// parse implements the crawling-relevant subset of robots.txt: User-agent groups with
+// Allow/Disallow directives. Sitemap and Crawl-delay directives are ignored.
 func parse(body string) map[string]*ruleset {
 	groups := map[string]*ruleset{}
 	var currentAgents []string

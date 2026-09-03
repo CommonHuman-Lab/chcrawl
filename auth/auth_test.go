@@ -66,6 +66,40 @@ func TestFormLogin_SubmitsHiddenFieldsAndCredentials(t *testing.T) {
 	}
 }
 
+// TestFormLogin_CapturesCookieAcrossRedirect covers the shape almost every
+// real login form actually uses (302 + Set-Cookie, then a redirect to a
+// landing page that sets no cookie of its own) — the exact scenario that
+// silently produced an empty Result.Cookies before FormLogin switched from
+// reading the final response's Set-Cookie header to reading the fetcher's
+// cookie jar, since Set-Cookie only ever appears on the intermediate 302,
+// never on the page it redirects to.
+func TestFormLogin_CapturesCookieAcrossRedirect(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte(`<form method="post"><input name="username"><input name="password"></form>`))
+			return
+		}
+		w.Header().Set("Set-Cookie", "session=after-redirect-abc")
+		http.Redirect(w, r, "/dashboard", http.StatusFound)
+	})
+	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte(`<html><body>welcome back</body></html>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	result, err := FormLogin(context.Background(), newTestFetcher(t), srv.URL+"/login", "username", "alice", "password", "hunter2", nil)
+	if err != nil {
+		t.Fatalf("FormLogin: %v", err)
+	}
+	if result.Cookies != "session=after-redirect-abc" {
+		t.Errorf("expected the redirect hop's Set-Cookie to be captured via the jar, got %q", result.Cookies)
+	}
+}
+
 func TestFormLogin_ExtractsBearerTokenFromJSONResponse(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {

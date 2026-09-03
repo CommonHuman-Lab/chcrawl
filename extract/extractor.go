@@ -1,5 +1,4 @@
-// Package extract discovers links, forms, and other crawl targets from a
-// fetched page.
+// Package extract discovers links, forms, and other crawl targets from a fetched page.
 package extract
 
 import (
@@ -16,8 +15,7 @@ type Param struct {
 	Value string
 }
 
-// Discovery is one thing an Extractor found on a page: a link to follow, or
-// a form/endpoint worth recording.
+// Discovery is one thing an Extractor found on a page: a link to follow, or a form/endpoint worth recording.
 type Discovery struct {
 	Kind   string // "link", "form", "code_path"
 	URL    string
@@ -27,9 +25,8 @@ type Discovery struct {
 	Meta   map[string]string
 }
 
-// Input is the shared, already-parsed input handed to every Extractor for a
-// single page, so HTML is parsed exactly once regardless of how many
-// extractors run over it.
+// Input is the shared, already-parsed input handed to every Extractor, so HTML is parsed exactly
+// once regardless of how many extractors run over it.
 type Input struct {
 	Resp    *fetch.Response
 	BaseURL *url.URL
